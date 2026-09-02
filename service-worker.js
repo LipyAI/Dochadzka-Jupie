@@ -1,9 +1,8 @@
-var CACHE_NAME = "dochadzka-cache-v1";
+var CACHE_NAME = "dochadzka-cache-v2";
 var URLS_TO_CACHE = [
   "./",
   "./index.html",
   "./style.css",
-  "./app.js",
   "./manifest.json",
   "./icons/icon-192.png",
   "./icons/icon-512.png",

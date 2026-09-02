@@ -1,7 +1,10 @@
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
+import {
+  getFirestore, doc, onSnapshot, setDoc, enableIndexedDbPersistence,
+} from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
+
 (function () {
   "use strict";
-
-  var STORAGE_KEY = "dochadzka-data-v1";
 
   var EVENT_TYPES = {
     trening: { label: "Tréning", color: "#378ADD", bg: "#E6F1FB", text: "#0C447C" },
@@ -54,35 +57,56 @@
     return cells;
   }
 
-  // ---------- persisted state ----------
+  // ---------- shared (Firebase) state ----------
   var data = { members: [], trainings: [], attendance: {} };
-  function loadData() {
-    try {
-      var raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        var parsed = JSON.parse(raw);
-        data.members = parsed.members || [];
-        data.trainings = parsed.trainings || [];
-        data.attendance = parsed.attendance || {};
+  var db, docRef;
+  var isSynced = false;
+
+  function initFirebase() {
+    var cfg = window.FIREBASE_CONFIG;
+    if (!cfg || !cfg.apiKey || cfg.apiKey.indexOf("TVOJ_") === 0) {
+      ui.error = "Appka ešte nie je pripojená k databáze. Doplň hodnoty vo firebase-config.js.";
+      render();
+      return;
+    }
+    var app = initializeApp(cfg);
+    db = getFirestore(app);
+    try { enableIndexedDbPersistence(db); } catch (e) { /* multiple tabs / unsupported - ignore */ }
+    docRef = doc(db, "dochadzka", "shared");
+    onSnapshot(
+      docRef,
+      function (snap) {
+        if (snap.exists()) {
+          var d = snap.data();
+          data.members = d.members || [];
+          data.trainings = d.trainings || [];
+          data.attendance = d.attendance || {};
+        }
+        isSynced = true;
+        ui.error = "";
+        render();
+      },
+      function (err) {
+        ui.error = "Chyba pripojenia k databáze: " + err.message;
+        render();
       }
-    } catch (e) { /* ignore corrupt data */ }
+    );
   }
+
   var saveTimer = null;
   function saveData() {
+    if (!docRef) return;
     ui.saving = true;
     renderTopStatusOnly();
     clearTimeout(saveTimer);
     saveTimer = setTimeout(function () {
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-        ui.error = "";
-      } catch (e) {
-        ui.error = "Uloženie zlyhalo. Skús to znova.";
-      }
-      ui.saving = false;
-      renderTopStatusOnly();
+      setDoc(docRef, data)
+        .then(function () { ui.error = ""; })
+        .catch(function (err) { ui.error = "Uloženie zlyhalo: " + err.message; })
+        .finally(function () { ui.saving = false; renderTopStatusOnly(); });
     }, 150);
   }
+
 
   // ---------- transient UI state ----------
   var ui = {
@@ -485,8 +509,8 @@
   // ---------- init ----------
   document.addEventListener("DOMContentLoaded", function () {
     appEl = document.getElementById("app");
-    loadData();
-    render();
+    appEl.innerHTML = '<div style="padding:24px;text-align:center;color:#888">Pripájam sa k databáze\u2026</div>';
+    initFirebase();
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("service-worker.js").catch(function () {});
     }
