@@ -176,12 +176,18 @@ import {
   function sortedMembers() {
     return data.members.slice().sort(function (a, b) { return a.name.localeCompare(b.name, "sk"); });
   }
+  function statsEligibleEvents() {
+    // Only real trainings count toward attendance %% — matches/tournaments are squad
+    // selections, not attendance tracking, so they're excluded here.
+    return data.trainings.filter(function (t) { return (t.type || "trening") === "trening"; });
+  }
   function memberStats(memberId) {
     var present = 0;
-    data.trainings.forEach(function (t) {
+    var events = statsEligibleEvents();
+    events.forEach(function (t) {
       if (data.attendance[t.id] && data.attendance[t.id][memberId] === true) present++;
     });
-    var total = data.trainings.length;
+    var total = events.length;
     var pct = total === 0 ? 0 : Math.round((present / total) * 100);
     return { present: present, total: total, pct: pct };
   }
@@ -536,8 +542,8 @@ import {
   }
 
   function renderStatsTab() {
-    if (data.members.length === 0 || data.trainings.length === 0) {
-      return '<div class="empty">Pridaj členov aj tréningy, aby sa mohli zobraziť štatistiky dochádzky.</div>';
+    if (data.members.length === 0 || statsEligibleEvents().length === 0) {
+      return '<div class="empty">Pridaj členov aj tréningy, aby sa mohli zobraziť štatistiky dochádzky. (Zápasy a turnaje sa do štatistiky nepočítajú.)</div>';
     }
     var rows = sortedMembers().map(function (m) { return { m: m, s: memberStats(m.id) }; });
     rows.sort(function (a, b) { return b.s.pct - a.s.pct; });
