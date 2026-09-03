@@ -1,6 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
 import {
-  getFirestore, doc, onSnapshot, setDoc, enableIndexedDbPersistence,
+  getFirestore, doc, onSnapshot, setDoc,
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
 
 (function () {
@@ -87,11 +87,20 @@ import {
     }
     var app = initializeApp(cfg);
     db = getFirestore(app);
-    try { enableIndexedDbPersistence(db); } catch (e) { /* multiple tabs / unsupported - ignore */ }
     docRef = doc(db, "dochadzka", "shared");
+
+    var connected = false;
+    setTimeout(function () {
+      if (!connected) {
+        ui.error = "Pripojenie k databáze trvá nezvyčajne dlho. Skontroluj internetové pripojenie alebo skús appku otvoriť v inom prehliadači (napr. Chrome). Ak máš v Safari zapnutý blokovač obsahu / VPN / Private Relay, skús ho pre túto stránku vypnúť.";
+        render();
+      }
+    }, 8000);
+
     onSnapshot(
       docRef,
       function (snap) {
+        connected = true;
         if (snap.exists()) {
           var d = snap.data();
           data.members = d.members || [];
@@ -103,6 +112,7 @@ import {
         render();
       },
       function (err) {
+        connected = true;
         ui.error = "Chyba pripojenia k databáze: " + err.message;
         render();
       }
