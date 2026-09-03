@@ -6,7 +6,7 @@ import {
 (function () {
   "use strict";
 
-  var ADMIN_CODE = "2002";
+  var ADMIN_CODE = "293919";
   var LOGIN_KEY = "dochadzka-login-code";
 
   var EVENT_TYPES = {
@@ -29,7 +29,7 @@ import {
   // ---------- utils ----------
   function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
   function todayISO() { return new Date().toISOString().slice(0, 10); }
-  function isValidCode(s) { return /^\d{4}$/.test(String(s || "").trim()); }
+  function isValidCode(s) { return /^\d{6}$/.test(String(s || "").trim()); }
   function formatDate(iso) {
     var d = new Date(iso + "T00:00:00");
     return d.toLocaleDateString("sk-SK", { day: "numeric", month: "short", year: "numeric" });
@@ -149,7 +149,7 @@ import {
 
   // ---------- transient UI state ----------
   var ui = {
-    code: (function () { try { return localStorage.getItem(LOGIN_KEY) || null; } catch (e) { return null; } })(),
+    code: (function () { try { return sessionStorage.getItem(LOGIN_KEY) || null; } catch (e) { return null; } })(),
     loginInputVal: "",
     loginError: "",
     tab: "trainings",
@@ -220,19 +220,19 @@ import {
   // ---------- mutations ----------
   function login() {
     if (!isValidCode(ui.loginInputVal)) {
-      ui.loginError = "Zadaj platný 4-miestny kód (len číslice).";
+      ui.loginError = "Zadaj platný 6-miestny kód (len číslice).";
       render();
       return;
     }
     ui.code = ui.loginInputVal.trim();
     ui.loginError = "";
-    try { localStorage.setItem(LOGIN_KEY, ui.code); } catch (e) { /* ignore */ }
+    try { sessionStorage.setItem(LOGIN_KEY, ui.code); } catch (e) { /* ignore */ }
     render();
   }
   function logout() {
     ui.code = null;
     ui.loginInputVal = "";
-    try { localStorage.removeItem(LOGIN_KEY); } catch (e) { /* ignore */ }
+    try { sessionStorage.removeItem(LOGIN_KEY); } catch (e) { /* ignore */ }
     render();
   }
 
@@ -350,10 +350,10 @@ import {
 
   function renderLogin() {
     var html = '<div class="card" style="text-align:center;padding:26px 16px">';
-    html += '<div style="font-weight:600;font-size:16px;margin-bottom:6px">Zadaj sv\u00f4j 4-miestny k\u00f3d</div>';
-    html += '<div class="small" style="margin-bottom:16px">K\u00f3d si zvol\u00ed\u0161 s\u00e1m. Appka si ho zapam\u00e4t\u00e1 na tomto telef\u00f3ne.</div>';
-    html += '<input type="tel" inputmode="numeric" maxlength="4" id="input-login-code" placeholder="\u2022\u2022\u2022\u2022" ' +
-      'style="text-align:center;font-size:24px;letter-spacing:10px;width:150px;margin:0 auto 12px;display:block;border:1px solid #ddd;border-radius:8px;padding:9px 0" value="' + esc(ui.loginInputVal) + '" />';
+    html += '<div style="font-weight:600;font-size:16px;margin-bottom:6px">Zadaj sv\u00f4j 6-miestny k\u00f3d</div>';
+    html += '<div class="small" style="margin-bottom:16px">K\u00f3d si zvol\u00ed\u0161 s\u00e1m. Po zatvoren\u00ed appky bude\u0161 musie\u0165 k\u00f3d zada\u0165 znova.</div>';
+    html += '<input type="tel" inputmode="numeric" maxlength="6" id="input-login-code" placeholder="\u2022\u2022\u2022\u2022\u2022\u2022" ' +
+      'style="text-align:center;font-size:22px;letter-spacing:7px;width:190px;margin:0 auto 12px;display:block;border:1px solid #ddd;border-radius:8px;padding:9px 0" value="' + esc(ui.loginInputVal) + '" />';
     if (ui.loginError) html += '<div class="error" style="display:block;margin-bottom:10px">' + esc(ui.loginError) + "</div>";
     html += '<button class="btn-primary" data-action="login">Vst\u00fapi\u0165</button>';
     html += "</div>";
@@ -650,7 +650,7 @@ import {
   function bindEvents() {
     var loginEl = document.getElementById("input-login-code");
     if (loginEl) {
-      loginEl.addEventListener("input", function (e) { ui.loginInputVal = e.target.value.replace(/\D/g, "").slice(0, 4); e.target.value = ui.loginInputVal; });
+      loginEl.addEventListener("input", function (e) { ui.loginInputVal = e.target.value.replace(/\D/g, "").slice(0, 6); e.target.value = ui.loginInputVal; });
       loginEl.addEventListener("keydown", function (e) { if (e.key === "Enter") login(); });
       loginEl.focus();
     }
