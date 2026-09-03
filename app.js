@@ -101,6 +101,7 @@ import {
       docRef,
       function (snap) {
         connected = true;
+        ui.dataLoaded = true;
         if (snap.exists()) {
           var d = snap.data();
           data.members = d.members || [];
@@ -167,6 +168,7 @@ import {
     newTrainingType: "trening",
     saving: false,
     error: "",
+    dataLoaded: false,
   };
 
   function isAdmin() { return ui.code === ADMIN_CODE; }
@@ -308,6 +310,11 @@ import {
     html += '<div id="error-indicator" class="error" style="display:' + (ui.error ? "block" : "none") + '">' + esc(ui.error) + "</div>";
 
     if (!ui.code) return html + renderLogin();
+
+    if (!ui.dataLoaded) {
+      html += '<div style="padding:24px;text-align:center;color:#888">Pripájam sa k databáze\u2026</div>';
+      return html;
+    }
 
     html += '<div class="row" style="margin-bottom:10px">';
     html += '<span class="small">Prihl\u00e1sen\u00fd k\u00f3d: ' + esc(ui.code) + (isAdmin() ? " (admin)" : "") + '</span>';
@@ -717,7 +724,7 @@ import {
   // ---------- init ----------
   document.addEventListener("DOMContentLoaded", function () {
     appEl = document.getElementById("app");
-    appEl.innerHTML = '<div style="padding:24px;text-align:center;color:#888">Pripájam sa k databáze\u2026</div>';
+    render();
     initFirebase();
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("service-worker.js").catch(function () {});
