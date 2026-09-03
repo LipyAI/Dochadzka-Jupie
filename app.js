@@ -168,6 +168,7 @@ import {
     tab: "trainings",
     selectedTrainingId: null,
     selectedMemberId: null,
+    selectedDayIso: null,
     calendarYear: new Date().getFullYear(),
     calendarMonth: new Date().getMonth(),
     mainCalYear: new Date().getFullYear(),
@@ -225,6 +226,12 @@ import {
   }
   function firstTrainingOnDate(iso) {
     return data.trainings.find(function (t) {
+      var end = t.endDate || t.date;
+      return iso >= t.date && iso <= end;
+    });
+  }
+  function eventsOnDate(iso) {
+    return data.trainings.filter(function (t) {
       var end = t.endDate || t.date;
       return iso >= t.date && iso <= end;
     });
@@ -360,6 +367,7 @@ import {
 
     if (ui.selectedTrainingId) return html + renderTrainingDetail();
     if (ui.selectedMemberId) return html + renderMemberProfile();
+    if (ui.selectedDayIso) return html + renderDayDetail();
 
     html += '<div class="tabs">';
     html += tabButton("trainings", "\uD83D\uDCC5", "Tréningy");
@@ -413,9 +421,7 @@ import {
     cells.forEach(function (cell) {
       if (!cell) { html += "<div></div>"; return; }
       var types = typesByDate[cell.iso];
-      var clickable = types && types.length > 0;
-      html += '<div class="mini-cal-cell' + (clickable ? " clickable" : "") + '"' +
-        (clickable ? ' data-action="open-day" data-iso="' + cell.iso + '"' : "") + ">";
+      html += '<div class="mini-cal-cell clickable" data-action="open-day" data-iso="' + cell.iso + '">';
       html += '<span class="mini-cal-day">' + cell.day + "</span>";
       if (types) {
         html += '<span class="mini-cal-dots">';
@@ -427,6 +433,37 @@ import {
       html += "</div>";
     });
     html += "</div></div>";
+    return html;
+  }
+
+  function renderDayDetail() {
+    var iso = ui.selectedDayIso;
+    var events = eventsOnDate(iso);
+    var html = '<button class="btn" style="margin-bottom:12px" data-action="back-day">\u2b05\ufe0f Späť</button>';
+    html += '<div style="font-weight:600;font-size:16px;margin-bottom:12px">' + esc(formatDate(iso)) + "</div>";
+
+    if (events.length === 0) {
+      html += '<div class="empty">V tento deň nie je žiadna udalosť.</div>';
+      html += '<div class="card row">';
+      html += '<span class="small">Chce\u0161 sem prida\u0165 udalos\u0165?</span>';
+      html += '<button class="btn-primary" data-action="add-on-day" data-iso="' + iso + '">\u2795 Prida\u0165</button>';
+      html += "</div>";
+      return html;
+    }
+
+    events.forEach(function (t) {
+      var att = data.attendance[t.id] || {};
+      var presentCount = data.members.filter(function (m) { return att[m.id] === true; }).length;
+      var def = eventType(t);
+      html += '<div class="card event-card" style="border-left-color:' + def.color + ';cursor:pointer" data-action="open-training" data-id="' + t.id + '">';
+      html += '<div class="row" style="justify-content:flex-start;gap:8px">';
+      html += '<span style="font-weight:600">' + esc(formatDateRange(t.date, t.endDate)) + "</span>";
+      html += '<span class="badge" style="background:' + def.bg + ";color:" + def.text + '">' + esc(def.label) + "</span>";
+      html += "</div>";
+      if (t.note) html += '<div class="small">' + esc(t.note) + "</div>";
+      html += '<div class="small">' + presentCount + " / " + data.members.length + " prítomných</div>";
+      html += "</div>";
+    });
     return html;
   }
 
@@ -752,9 +789,13 @@ import {
       case "add-training": addTraining(); break;
       case "duplicate-training": duplicateTraining(el.getAttribute("data-id")); break;
       case "open-training": ui.selectedTrainingId = el.getAttribute("data-id"); render(); break;
-      case "open-day":
-        var t = firstTrainingOnDate(el.getAttribute("data-iso"));
-        if (t) { ui.selectedTrainingId = t.id; render(); }
+      case "open-day": ui.selectedDayIso = el.getAttribute("data-iso"); render(); break;
+      case "back-day": ui.selectedDayIso = null; render(); break;
+      case "add-on-day":
+        ui.newTrainingDate = el.getAttribute("data-iso");
+        ui.selectedDayIso = null;
+        ui.tab = "trainings";
+        render();
         break;
       case "back-training": ui.selectedTrainingId = null; render(); break;
       case "remove-training": removeTraining(el.getAttribute("data-id")); break;
