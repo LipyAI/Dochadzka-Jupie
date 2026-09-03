@@ -190,11 +190,14 @@ import {
     data.trainings.forEach(function (t) {
       var end = t.endDate || t.date;
       var cur = t.date;
-      while (cur <= end) {
+      var guard = 0;
+      while (cur <= end && guard < 370) {
+        guard++;
         if (!map[cur]) map[cur] = [];
         var type = t.type || "trening";
         if (map[cur].indexOf(type) === -1) map[cur].push(type);
         var d = new Date(cur + "T00:00:00");
+        if (isNaN(d.getTime())) break;
         d.setDate(d.getDate() + 1);
         cur = d.toISOString().slice(0, 10);
       }
@@ -574,9 +577,12 @@ import {
     data.trainings.forEach(function (t) {
       var end = t.endDate || t.date;
       var cur = t.date;
-      while (cur <= end) {
+      var guard = 0;
+      while (cur <= end && guard < 370) {
+        guard++;
         trainingByDate[cur] = t;
         var d = new Date(cur + "T00:00:00");
+        if (isNaN(d.getTime())) break;
         d.setDate(d.getDate() + 1);
         cur = d.toISOString().slice(0, 10);
       }
