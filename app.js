@@ -28,7 +28,15 @@ import {
 
   // ---------- utils ----------
   function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
-  function todayISO() { return new Date().toISOString().slice(0, 10); }
+  function isoDate(d) {
+    // Local-timezone-safe date formatting (toISOString() converts to UTC and can
+    // shift the date by one day for timezones ahead of UTC, like Slovakia).
+    var y = d.getFullYear();
+    var m = String(d.getMonth() + 1).padStart(2, "0");
+    var day = String(d.getDate()).padStart(2, "0");
+    return y + "-" + m + "-" + day;
+  }
+  function todayISO() { return isoDate(new Date()); }
   function isValidCode(s) { return /^\d{6}$/.test(String(s || "").trim()); }
   function formatDate(iso) {
     var d = new Date(iso + "T00:00:00");
@@ -52,12 +60,12 @@ import {
     var d = new Date();
     var diff = (targetDay - d.getDay() + 7) % 7;
     d.setDate(d.getDate() + (diff === 0 ? 7 : diff));
-    return d.toISOString().slice(0, 10);
+    return isoDate(d);
   }
   function addDays(iso, days) {
     var d = new Date(iso + "T00:00:00");
     d.setDate(d.getDate() + days);
-    return d.toISOString().slice(0, 10);
+    return isoDate(d);
   }
   function eventType(t) { return EVENT_TYPES[t.type] || EVENT_TYPES.trening; }
   function esc(str) {
@@ -210,7 +218,7 @@ import {
         var d = new Date(cur + "T00:00:00");
         if (isNaN(d.getTime())) break;
         d.setDate(d.getDate() + 1);
-        cur = d.toISOString().slice(0, 10);
+        cur = isoDate(d);
       }
     });
     return map;
@@ -642,7 +650,7 @@ import {
         var d = new Date(cur + "T00:00:00");
         if (isNaN(d.getTime())) break;
         d.setDate(d.getDate() + 1);
-        cur = d.toISOString().slice(0, 10);
+        cur = isoDate(d);
       }
     });
 
