@@ -54,6 +54,11 @@ import {
     d.setDate(d.getDate() + (diff === 0 ? 7 : diff));
     return d.toISOString().slice(0, 10);
   }
+  function addDays(iso, days) {
+    var d = new Date(iso + "T00:00:00");
+    d.setDate(d.getDate() + days);
+    return d.toISOString().slice(0, 10);
+  }
   function eventType(t) { return EVENT_TYPES[t.type] || EVENT_TYPES.trening; }
   function esc(str) {
     return String(str == null ? "" : str).replace(/[&<>"']/g, function (c) {
@@ -273,6 +278,21 @@ import {
     ui.newTrainingNote = ""; ui.newTrainingEndDate = "";
     saveData(); render();
   }
+  function duplicateTraining(id) {
+    var orig = data.trainings.find(function (x) { return x.id === id; });
+    if (!orig) return;
+    var newDate = addDays(orig.date, 7);
+    var newEndDate = orig.endDate ? addDays(orig.endDate, 7) : null;
+    var t = {
+      id: uid(), date: newDate, endDate: newEndDate, note: orig.note || "",
+      type: orig.type, createdBy: ui.code, lastEditedBy: null, lastEditedAt: null,
+    };
+    data.trainings.push(t);
+    data.trainings.sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+    pushLog("add-event", eventType(t).label + " " + formatDateRange(t.date, t.endDate) + " (opakovanie)");
+    ui.selectedTrainingId = t.id;
+    saveData(); render();
+  }
   function removeTraining(id) {
     if (!isAdmin()) return;
     var t = data.trainings.find(function (x) { return x.id === id; });
@@ -481,7 +501,10 @@ import {
     var presentCount = data.members.filter(function (m) { return att[m.id] === true; }).length;
     var def = eventType(t);
 
-    var html = '<button class="btn" style="margin-bottom:12px" data-action="back-training">\u2b05\ufe0f Späť</button>';
+    var html = '<div class="row" style="margin-bottom:12px">';
+    html += '<button class="btn" data-action="back-training">\u2b05\ufe0f Späť</button>';
+    html += '<button class="btn" data-action="duplicate-training" data-id="' + t.id + '">\ud83d\udd01 Zopakova\u0165 o t\u00fd\u017ede\u0148</button>';
+    html += "</div>";
     html += '<div style="margin-bottom:12px">';
     html += '<div class="row" style="justify-content:flex-start;gap:8px">';
     html += '<span style="font-weight:600;font-size:16px">' + esc(formatDateRange(t.date, t.endDate)) + "</span>";
@@ -719,6 +742,7 @@ import {
       case "set-type": ui.newTrainingType = el.getAttribute("data-type"); render(); break;
       case "quickday": ui.newTrainingDate = nextWeekday(parseInt(el.getAttribute("data-day"), 10)); render(); break;
       case "add-training": addTraining(); break;
+      case "duplicate-training": duplicateTraining(el.getAttribute("data-id")); break;
       case "open-training": ui.selectedTrainingId = el.getAttribute("data-id"); render(); break;
       case "open-day":
         var t = firstTrainingOnDate(el.getAttribute("data-iso"));
