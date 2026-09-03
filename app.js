@@ -558,9 +558,13 @@ import {
   }
 
   function renderActivityTab() {
+    var html = '<div class="card row">';
+    html += '<div><div style="font-weight:600">Záloha dát</div><div class="small">Stiahne aktu\u00e1lny stav (\u010dlenovia, udalosti, doch\u00e1dzka, denn\u00edk) ako s\u00fabor.</div></div>';
+    html += '<button class="btn-primary" data-action="export-backup">\u2b07\ufe0f St\u00edahnu\u0165</button>';
+    html += "</div>";
+
     var log = (data.log || []).slice().sort(function (a, b) { return b.ts - a.ts; });
-    if (log.length === 0) return '<div class="empty">Zatiaľ žiadna aktivita.</div>';
-    var html = "";
+    if (log.length === 0) return html + '<div class="empty">Zatiaľ žiadna aktivita.</div>';
     log.forEach(function (entry) {
       var label = ACTION_LABELS[entry.action] || entry.action;
       html += '<div class="card">';
@@ -570,6 +574,31 @@ import {
       html += "</div>";
     });
     return html;
+  }
+
+  function exportBackup() {
+    try {
+      var clean = {
+        exportedAt: new Date().toISOString(),
+        members: data.members,
+        trainings: data.trainings,
+        attendance: data.attendance,
+        log: data.log,
+      };
+      var blob = new Blob([JSON.stringify(clean, null, 2)], { type: "application/json" });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement("a");
+      var stamp = todayISO();
+      a.href = url;
+      a.download = "dochadzka-zaloha-" + stamp + ".json";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+    } catch (e) {
+      ui.error = "Zálohu sa nepodarilo stiahnuť: " + e.message;
+      render();
+    }
   }
 
   function renderMemberProfile() {
@@ -684,6 +713,7 @@ import {
     var action = el.getAttribute("data-action");
     switch (action) {
       case "login": login(); break;
+      case "export-backup": exportBackup(); break;
       case "logout": logout(); break;
       case "tab": ui.tab = el.getAttribute("data-tab"); render(); break;
       case "set-type": ui.newTrainingType = el.getAttribute("data-type"); render(); break;
