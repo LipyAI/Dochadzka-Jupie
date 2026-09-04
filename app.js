@@ -7,6 +7,7 @@ import {
 (function () {
   "use strict";
 
+  var APP_VERSION = "1.5.0";
   var ADMIN_CODE = "293919";
   var LOGIN_KEY = "dochadzka-login-code";
 
@@ -472,6 +473,7 @@ import {
   function renderApp() {
     var html = "";
     html += '<div class="header"><h1>Dochádzka na tréningu</h1><span id="saving-indicator" class="saving" style="display:' + (ui.saving ? "inline" : "none") + '">Ukladám\u2026</span></div>';
+    html += '<div class="small" style="margin-top:-8px;margin-bottom:8px">verzia ' + APP_VERSION + "</div>";
     html += '<div id="error-indicator" class="error" style="display:' + (ui.error ? "block" : "none") + '">' + esc(ui.error) + "</div>";
 
     if (!ui.code) return html + renderLogin();
@@ -959,6 +961,7 @@ import {
 
   // ---------- init ----------
   document.addEventListener("DOMContentLoaded", function () {
+    console.log("Doch\u00e1dzka na tr\u00e9ningu \u2014 verzia " + APP_VERSION);
     appEl = document.getElementById("app");
     render();
     initFirebase();
