@@ -4,6 +4,12 @@ Pri každej väčšej úprave appky sa sem pridá nový riadok s číslom verzie
 (rovnaké číslo, aké appka zobrazuje pod nadpisom, aby sa dalo overiť,
 či je nasadená naozaj tá najnovšia).
 
+## 1.6.0
+- Pridané voliteľné pole "Čas" pri vytváraní udalosti (hodí sa najmä
+  pri zápasoch) — zobrazuje sa pri dátume v zozname aj detaile udalosti.
+- Prepínač tmavého/svetlého režimu (ikona v hlavičke appky), appka si
+  ho pamätá aj po zatvorení a zapnutí.
+
 ## 1.5.0
 - Prestavba databázy: namiesto jedného spoločného dokumentu teraz appka
   používa samostatné kolekcie (`members`, `trainings`, `attendance`,

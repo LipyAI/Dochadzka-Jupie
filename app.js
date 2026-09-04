@@ -7,9 +7,14 @@ import {
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.5.0";
+  var APP_VERSION = "1.6.0";
   var ADMIN_CODE = "293919";
   var LOGIN_KEY = "dochadzka-login-code";
+  var THEME_KEY = "dochadzka-theme";
+
+  function applyTheme(theme) {
+    document.documentElement.classList.toggle("dark", theme === "dark");
+  }
 
   var EVENT_TYPES = {
     trening: { label: "Tréning", color: "#378ADD", bg: "#E6F1FB", text: "#0C447C" },
@@ -52,6 +57,10 @@ import {
     var startStr = s.toLocaleDateString("sk-SK", sameMonth ? { day: "numeric" } : { day: "numeric", month: "short" });
     var endStr = e.toLocaleDateString("sk-SK", { day: "numeric", month: "short", year: "numeric" });
     return startStr + ". \u2013 " + endStr;
+  }
+  function formatEventWhen(t) {
+    var base = formatDateRange(t.date, t.endDate);
+    return t.time ? base + " \u00b7 " + t.time : base;
   }
   function formatDateTime(ts) {
     var d = new Date(ts);
@@ -144,7 +153,7 @@ import {
           items.push({
             ref: doc(trainingsCol, t.id),
             data: {
-              date: t.date, endDate: t.endDate || null, note: t.note || "", type: t.type || "trening",
+              date: t.date, endDate: t.endDate || null, time: t.time || null, note: t.note || "", type: t.type || "trening",
               createdBy: t.createdBy || null, lastEditedBy: t.lastEditedBy || null, lastEditedAt: t.lastEditedAt || null,
             },
           });
@@ -261,11 +270,19 @@ import {
     newMemberName: "",
     newTrainingDate: todayISO(),
     newTrainingEndDate: "",
+    newTrainingTime: "",
     newTrainingNote: "",
     newTrainingType: "trening",
     saving: false,
     error: "",
     dataLoaded: false,
+    theme: (function () {
+      try {
+        var saved = localStorage.getItem(THEME_KEY);
+        if (saved) return saved;
+      } catch (e) { /* ignore */ }
+      return (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) ? "dark" : "light";
+    })(),
   };
 
   function isAdmin() { return ui.code === ADMIN_CODE; }
@@ -383,7 +400,7 @@ import {
     var endDate = ui.newTrainingEndDate && ui.newTrainingEndDate > ui.newTrainingDate ? ui.newTrainingEndDate : null;
     var id = uid();
     var t = {
-      id: id, date: ui.newTrainingDate, endDate: endDate, note: ui.newTrainingNote.trim(),
+      id: id, date: ui.newTrainingDate, endDate: endDate, time: ui.newTrainingTime || null, note: ui.newTrainingNote.trim(),
       type: ui.newTrainingType, createdBy: ui.code, lastEditedBy: null, lastEditedAt: null,
     };
     data.trainings.push(t);
@@ -391,10 +408,10 @@ import {
     ui.newTrainingNote = ""; ui.newTrainingEndDate = "";
     render();
     withSaving(setDoc(doc(trainingsCol, id), {
-      date: t.date, endDate: t.endDate, note: t.note, type: t.type,
+      date: t.date, endDate: t.endDate, time: t.time, note: t.note, type: t.type,
       createdBy: t.createdBy, lastEditedBy: null, lastEditedAt: null,
     }));
-    logAction("add-event", eventType(t).label + " " + formatDateRange(t.date, t.endDate));
+    logAction("add-event", eventType(t).label + " " + formatEventWhen(t));
   }
   function duplicateTraining(id) {
     var orig = data.trainings.find(function (x) { return x.id === id; });
@@ -403,7 +420,7 @@ import {
     var newEndDate = orig.endDate ? addDays(orig.endDate, 7) : null;
     var newId = uid();
     var t = {
-      id: newId, date: newDate, endDate: newEndDate, note: orig.note || "",
+      id: newId, date: newDate, endDate: newEndDate, time: orig.time || null, note: orig.note || "",
       type: orig.type, createdBy: ui.code, lastEditedBy: null, lastEditedAt: null,
     };
     data.trainings.push(t);
@@ -411,10 +428,10 @@ import {
     ui.selectedTrainingId = t.id;
     render();
     withSaving(setDoc(doc(trainingsCol, newId), {
-      date: t.date, endDate: t.endDate, note: t.note, type: t.type,
+      date: t.date, endDate: t.endDate, time: t.time, note: t.note, type: t.type,
       createdBy: t.createdBy, lastEditedBy: null, lastEditedAt: null,
     }));
-    logAction("add-event", eventType(t).label + " " + formatDateRange(t.date, t.endDate) + " (opakovanie)");
+    logAction("add-event", eventType(t).label + " " + formatEventWhen(t) + " (opakovanie)");
   }
   function removeTraining(id) {
     if (!isAdmin()) return;
@@ -472,7 +489,11 @@ import {
 
   function renderApp() {
     var html = "";
-    html += '<div class="header"><h1>Dochádzka na tréningu</h1><span id="saving-indicator" class="saving" style="display:' + (ui.saving ? "inline" : "none") + '">Ukladám\u2026</span></div>';
+    html += '<div class="header"><h1>Dochádzka na tréningu</h1>';
+    html += '<div style="display:flex;align-items:center;gap:6px">';
+    html += '<span id="saving-indicator" class="saving" style="display:' + (ui.saving ? "inline" : "none") + '">Ukladám\u2026</span>';
+    html += '<button class="icon-btn" data-action="toggle-theme" aria-label="Prepn\u00fa\u0165 tmav\u00fd re\u017eim">' + (ui.theme === "dark" ? "\u2600\ufe0f" : "\ud83c\udf19") + "</button>";
+    html += "</div></div>";
     html += '<div class="small" style="margin-top:-8px;margin-bottom:8px">verzia ' + APP_VERSION + "</div>";
     html += '<div id="error-indicator" class="error" style="display:' + (ui.error ? "block" : "none") + '">' + esc(ui.error) + "</div>";
 
@@ -580,7 +601,7 @@ import {
       var def = eventType(t);
       html += '<div class="card event-card" style="border-left-color:' + def.color + ';cursor:pointer" data-action="open-training" data-id="' + t.id + '">';
       html += '<div class="row" style="justify-content:flex-start;gap:8px">';
-      html += '<span style="font-weight:600">' + esc(formatDateRange(t.date, t.endDate)) + "</span>";
+      html += '<span style="font-weight:600">' + esc(formatEventWhen(t)) + "</span>";
       html += '<span class="badge" style="background:' + def.bg + ";color:" + def.text + '">' + esc(def.label) + "</span>";
       html += "</div>";
       if (t.note) html += '<div class="small">' + esc(t.note) + "</div>";
@@ -619,6 +640,10 @@ import {
     }
     html += "</div>";
 
+    html += '<div class="row" style="margin-bottom:8px">';
+    html += '<input type="time" id="input-new-time" value="' + esc(ui.newTrainingTime) + '" placeholder="\u010cas (nepovinn\u00e9)" />';
+    html += "</div>";
+
     html += '<div class="row">';
     html += '<input type="text" id="input-new-note" placeholder="Poznámka (nepovinné)" value="' + esc(ui.newTrainingNote) + '" />';
     html += '<button class="btn-primary" data-action="add-training">\u2795 Pridať</button>';
@@ -649,7 +674,7 @@ import {
         html += '<div class="row">';
         html += '<div style="cursor:pointer;flex:1" data-action="open-training" data-id="' + t.id + '">';
         html += '<div class="row" style="justify-content:flex-start;gap:8px">';
-        html += '<span style="font-weight:600">' + esc(formatDateRange(t.date, t.endDate)) + "</span>";
+        html += '<span style="font-weight:600">' + esc(formatEventWhen(t)) + "</span>";
         html += '<span class="badge" style="background:' + def.bg + ";color:" + def.text + '">' + esc(def.label) + "</span>";
         html += "</div>";
         if (t.note) html += '<div class="small">' + esc(t.note) + "</div>";
@@ -675,7 +700,7 @@ import {
     html += "</div>";
     html += '<div style="margin-bottom:12px">';
     html += '<div class="row" style="justify-content:flex-start;gap:8px">';
-    html += '<span style="font-weight:600;font-size:16px">' + esc(formatDateRange(t.date, t.endDate)) + "</span>";
+    html += '<span style="font-weight:600;font-size:16px">' + esc(formatEventWhen(t)) + "</span>";
     html += '<span class="badge" style="background:' + def.bg + ";color:" + def.text + '">' + esc(def.label) + "</span>";
     html += "</div>";
     if (t.note) html += '<div class="small">' + esc(t.note) + "</div>";
@@ -878,6 +903,8 @@ import {
     if (dateEl) dateEl.addEventListener("change", function (e) { ui.newTrainingDate = e.target.value; render(); });
     var endDateEl = document.getElementById("input-new-enddate");
     if (endDateEl) endDateEl.addEventListener("change", function (e) { ui.newTrainingEndDate = e.target.value; });
+    var timeEl = document.getElementById("input-new-time");
+    if (timeEl) timeEl.addEventListener("change", function (e) { ui.newTrainingTime = e.target.value; });
     var noteEl = document.getElementById("input-new-note");
     if (noteEl) noteEl.addEventListener("input", function (e) { ui.newTrainingNote = e.target.value; });
     var memberInputEl = document.getElementById("input-new-member");
@@ -906,6 +933,12 @@ import {
       case "login": login(); break;
       case "export-backup": exportBackup(); break;
       case "logout": logout(); break;
+      case "toggle-theme":
+        ui.theme = ui.theme === "dark" ? "light" : "dark";
+        try { localStorage.setItem(THEME_KEY, ui.theme); } catch (e) { /* ignore */ }
+        applyTheme(ui.theme);
+        render();
+        break;
       case "tab": ui.tab = el.getAttribute("data-tab"); render(); break;
       case "set-type": ui.newTrainingType = el.getAttribute("data-type"); render(); break;
       case "quickday": ui.newTrainingDate = nextWeekday(parseInt(el.getAttribute("data-day"), 10)); render(); break;
@@ -962,6 +995,7 @@ import {
   // ---------- init ----------
   document.addEventListener("DOMContentLoaded", function () {
     console.log("Doch\u00e1dzka na tr\u00e9ningu \u2014 verzia " + APP_VERSION);
+    applyTheme(ui.theme);
     appEl = document.getElementById("app");
     render();
     initFirebase();
