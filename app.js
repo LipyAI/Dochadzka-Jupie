@@ -1,6 +1,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
 import {
-  getFirestore, doc, onSnapshot, setDoc,
+  getFirestore, doc, collection, onSnapshot, setDoc, deleteDoc, addDoc,
+  query, orderBy, limit, getDoc, writeBatch,
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
 
 (function () {
@@ -89,7 +90,8 @@ import {
 
   // ---------- shared (Firebase) state ----------
   var data = { members: [], trainings: [], attendance: {}, log: [] };
-  var db, docRef;
+  var db;
+  var membersCol, trainingsCol, attendanceCol, logCol, metaDocRef, legacyDocRef;
 
   function initFirebase() {
     var cfg = window.FIREBASE_CONFIG;
@@ -100,64 +102,144 @@ import {
     }
     var app = initializeApp(cfg);
     db = getFirestore(app);
-    docRef = doc(db, "dochadzka", "shared");
+    membersCol = collection(db, "members");
+    trainingsCol = collection(db, "trainings");
+    attendanceCol = collection(db, "attendance");
+    logCol = collection(db, "activityLog");
+    metaDocRef = doc(db, "meta", "migration");
+    legacyDocRef = doc(db, "dochadzka", "shared");
 
-    var connected = false;
     setTimeout(function () {
-      if (!connected) {
+      if (!ui.dataLoaded) {
         ui.error = "Pripojenie k databáze trvá nezvyčajne dlho. Skontroluj internetové pripojenie alebo skús appku otvoriť v inom prehliadači (napr. Chrome). Ak máš v Safari zapnutý blokovač obsahu / VPN / Private Relay, skús ho pre túto stránku vypnúť.";
         render();
       }
     }, 8000);
 
-    onSnapshot(
-      docRef,
-      function (snap) {
-        connected = true;
-        ui.dataLoaded = true;
-        if (snap.exists()) {
-          var d = snap.data();
-          data.members = d.members || [];
-          data.trainings = d.trainings || [];
-          data.attendance = d.attendance || {};
-          data.log = d.log || [];
-        }
-        ui.error = "";
+    ensureMigration()
+      .then(startListeners)
+      .catch(function (err) {
+        ui.error = "Chyba pri inicializ\u00e1cii datab\u00e1zy: " + err.message;
         render();
-      },
-      function (err) {
-        connected = true;
-        ui.error = "Chyba pripojenia k databáze: " + err.message;
-        render();
-      }
-    );
+      });
   }
 
-  var saveTimer = null;
-  function saveData() {
-    if (!docRef) return;
+  // One-time copy of data from the old single-document layout into the new
+  // collections, so nothing gets lost when upgrading. The legacy document is
+  // left untouched afterwards (kept only as a safety-net backup).
+  function ensureMigration() {
+    return getDoc(metaDocRef).then(function (metaSnap) {
+      if (metaSnap.exists() && metaSnap.data().done) return;
+      return getDoc(legacyDocRef).then(function (legacySnap) {
+        if (!legacySnap.exists()) {
+          return setDoc(metaDocRef, { done: true, migratedAt: Date.now(), note: "no legacy data" });
+        }
+        var legacy = legacySnap.data();
+        var items = [];
+        (legacy.members || []).forEach(function (m) {
+          items.push({ ref: doc(membersCol, m.id), data: { name: m.name, createdBy: m.createdBy || null } });
+        });
+        (legacy.trainings || []).forEach(function (t) {
+          items.push({
+            ref: doc(trainingsCol, t.id),
+            data: {
+              date: t.date, endDate: t.endDate || null, note: t.note || "", type: t.type || "trening",
+              createdBy: t.createdBy || null, lastEditedBy: t.lastEditedBy || null, lastEditedAt: t.lastEditedAt || null,
+            },
+          });
+        });
+        var att = legacy.attendance || {};
+        Object.keys(att).forEach(function (trainingId) {
+          Object.keys(att[trainingId]).forEach(function (memberId) {
+            items.push({
+              ref: doc(attendanceCol, trainingId + "_" + memberId),
+              data: { trainingId: trainingId, memberId: memberId, present: att[trainingId][memberId] },
+            });
+          });
+        });
+        (legacy.log || []).forEach(function (entry) {
+          items.push({
+            ref: doc(logCol, entry.id || uid()),
+            data: { ts: entry.ts, code: entry.code, action: entry.action, detail: entry.detail || "" },
+          });
+        });
+        return batchedSet(items).then(function () {
+          return setDoc(metaDocRef, { done: true, migratedAt: Date.now(), migratedCount: items.length });
+        });
+      });
+    });
+  }
+
+  function batchedSet(items) {
+    var chunks = [];
+    for (var i = 0; i < items.length; i += 400) chunks.push(items.slice(i, i + 400));
+    var p = Promise.resolve();
+    chunks.forEach(function (chunk) {
+      p = p.then(function () {
+        var batch = writeBatch(db);
+        chunk.forEach(function (it) { batch.set(it.ref, it.data); });
+        return batch.commit();
+      });
+    });
+    return p;
+  }
+
+  function startListeners() {
+    var loaded = { members: false, trainings: false, attendance: false, log: false };
+    function checkAllLoaded() {
+      if (loaded.members && loaded.trainings && loaded.attendance && loaded.log) ui.dataLoaded = true;
+    }
+    function onErr(err) {
+      ui.error = "Chyba pripojenia k databáze: " + err.message;
+      render();
+    }
+
+    onSnapshot(membersCol, function (snap) {
+      data.members = snap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); });
+      loaded.members = true; checkAllLoaded(); ui.error = ""; render();
+    }, onErr);
+
+    onSnapshot(trainingsCol, function (snap) {
+      data.trainings = snap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); })
+        .sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+      loaded.trainings = true; checkAllLoaded(); ui.error = ""; render();
+    }, onErr);
+
+    onSnapshot(attendanceCol, function (snap) {
+      var att = {};
+      snap.docs.forEach(function (d) {
+        var v = d.data();
+        if (!att[v.trainingId]) att[v.trainingId] = {};
+        att[v.trainingId][v.memberId] = v.present;
+      });
+      data.attendance = att;
+      loaded.attendance = true; checkAllLoaded(); ui.error = ""; render();
+    }, onErr);
+
+    onSnapshot(query(logCol, orderBy("ts", "desc"), limit(200)), function (snap) {
+      data.log = snap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); });
+      loaded.log = true; checkAllLoaded(); ui.error = ""; render();
+    }, onErr);
+  }
+
+  function withSaving(promise) {
     ui.saving = true;
     renderTopStatusOnly();
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(function () {
-      setDoc(docRef, data)
-        .then(function () { ui.error = ""; })
-        .catch(function (err) { ui.error = "Uloženie zlyhalo: " + err.message; })
-        .finally(function () { ui.saving = false; renderTopStatusOnly(); });
-    }, 150);
+    return promise
+      .then(function () { ui.error = ""; })
+      .catch(function (err) { ui.error = "Uloženie zlyhalo: " + err.message; render(); })
+      .finally(function () { ui.saving = false; renderTopStatusOnly(); });
   }
 
-  function pushLog(action, detail, dedupKey) {
-    if (!data.log) data.log = [];
+  function logAction(action, detail, dedupKey) {
     var now = Date.now();
     var key = action + "|" + (dedupKey || "") + "|" + ui.code;
-    var last = data.log[data.log.length - 1];
+    var last = data.log[0]; // newest first (ordered by ts desc)
     if (last && last._key === key && (now - last.ts) < 120000) {
-      last.ts = now;
-    } else {
-      data.log.push({ id: uid(), ts: now, code: ui.code, action: action, detail: detail || "", _key: key });
+      withSaving(setDoc(doc(logCol, last.id), { ts: now }, { merge: true }));
+      return;
     }
-    if (data.log.length > 150) data.log = data.log.slice(data.log.length - 150);
+    withSaving(addDoc(logCol, { ts: now, code: ui.code, action: action, detail: detail || "", _key: key }));
   }
 
   // ---------- transient UI state ----------
@@ -259,17 +341,31 @@ import {
   function addMember() {
     var name = ui.newMemberName.trim();
     if (!name) return;
-    data.members.push({ id: uid(), name: name, createdBy: ui.code });
-    pushLog("add-member", name);
+    var id = uid();
+    data.members.push({ id: id, name: name, createdBy: ui.code });
     ui.newMemberName = "";
-    saveData(); render();
+    render();
+    withSaving(setDoc(doc(membersCol, id), { name: name, createdBy: ui.code }));
+    logAction("add-member", name);
   }
   function removeMember(id) {
     if (!isAdmin()) return;
     var m = data.members.find(function (x) { return x.id === id; });
     data.members = data.members.filter(function (x) { return x.id !== id; });
-    pushLog("delete-member", m ? m.name : "");
-    saveData(); render();
+    var attIdsToDelete = [];
+    Object.keys(data.attendance).forEach(function (trainingId) {
+      if (data.attendance[trainingId] && Object.prototype.hasOwnProperty.call(data.attendance[trainingId], id)) {
+        attIdsToDelete.push(trainingId + "_" + id);
+        delete data.attendance[trainingId][id];
+      }
+    });
+    if (ui.selectedMemberId === id) ui.selectedMemberId = null;
+    render();
+    var batch = writeBatch(db);
+    batch.delete(doc(membersCol, id));
+    attIdsToDelete.forEach(function (attId) { batch.delete(doc(attendanceCol, attId)); });
+    withSaving(batch.commit());
+    logAction("delete-member", m ? m.name : "");
   }
   function renameMember(id, newName) {
     if (!isAdmin()) return;
@@ -277,45 +373,61 @@ import {
     if (!name) return;
     var old = data.members.find(function (x) { return x.id === id; });
     data.members = data.members.map(function (m) { return m.id === id ? Object.assign({}, m, { name: name }) : m; });
-    pushLog("rename-member", (old ? old.name : "") + " \u2192 " + name);
-    saveData(); render();
+    render();
+    withSaving(setDoc(doc(membersCol, id), { name: name, createdBy: old ? old.createdBy || null : null }, { merge: true }));
+    logAction("rename-member", (old ? old.name : "") + " \u2192 " + name);
   }
   function addTraining() {
     if (!ui.newTrainingDate) return;
     var endDate = ui.newTrainingEndDate && ui.newTrainingEndDate > ui.newTrainingDate ? ui.newTrainingEndDate : null;
+    var id = uid();
     var t = {
-      id: uid(), date: ui.newTrainingDate, endDate: endDate, note: ui.newTrainingNote.trim(),
+      id: id, date: ui.newTrainingDate, endDate: endDate, note: ui.newTrainingNote.trim(),
       type: ui.newTrainingType, createdBy: ui.code, lastEditedBy: null, lastEditedAt: null,
     };
     data.trainings.push(t);
     data.trainings.sort(function (a, b) { return a.date < b.date ? -1 : 1; });
-    pushLog("add-event", eventType(t).label + " " + formatDateRange(t.date, t.endDate));
     ui.newTrainingNote = ""; ui.newTrainingEndDate = "";
-    saveData(); render();
+    render();
+    withSaving(setDoc(doc(trainingsCol, id), {
+      date: t.date, endDate: t.endDate, note: t.note, type: t.type,
+      createdBy: t.createdBy, lastEditedBy: null, lastEditedAt: null,
+    }));
+    logAction("add-event", eventType(t).label + " " + formatDateRange(t.date, t.endDate));
   }
   function duplicateTraining(id) {
     var orig = data.trainings.find(function (x) { return x.id === id; });
     if (!orig) return;
     var newDate = addDays(orig.date, 7);
     var newEndDate = orig.endDate ? addDays(orig.endDate, 7) : null;
+    var newId = uid();
     var t = {
-      id: uid(), date: newDate, endDate: newEndDate, note: orig.note || "",
+      id: newId, date: newDate, endDate: newEndDate, note: orig.note || "",
       type: orig.type, createdBy: ui.code, lastEditedBy: null, lastEditedAt: null,
     };
     data.trainings.push(t);
     data.trainings.sort(function (a, b) { return a.date < b.date ? -1 : 1; });
-    pushLog("add-event", eventType(t).label + " " + formatDateRange(t.date, t.endDate) + " (opakovanie)");
     ui.selectedTrainingId = t.id;
-    saveData(); render();
+    render();
+    withSaving(setDoc(doc(trainingsCol, newId), {
+      date: t.date, endDate: t.endDate, note: t.note, type: t.type,
+      createdBy: t.createdBy, lastEditedBy: null, lastEditedAt: null,
+    }));
+    logAction("add-event", eventType(t).label + " " + formatDateRange(t.date, t.endDate) + " (opakovanie)");
   }
   function removeTraining(id) {
     if (!isAdmin()) return;
     var t = data.trainings.find(function (x) { return x.id === id; });
     data.trainings = data.trainings.filter(function (x) { return x.id !== id; });
+    var attIdsToDelete = data.attendance[id] ? Object.keys(data.attendance[id]).map(function (memberId) { return id + "_" + memberId; }) : [];
     delete data.attendance[id];
     if (ui.selectedTrainingId === id) ui.selectedTrainingId = null;
-    pushLog("delete-event", t ? (eventType(t).label + " " + formatDateRange(t.date, t.endDate)) : "");
-    saveData(); render();
+    render();
+    var batch = writeBatch(db);
+    batch.delete(doc(trainingsCol, id));
+    attIdsToDelete.forEach(function (attId) { batch.delete(doc(attendanceCol, attId)); });
+    withSaving(batch.commit());
+    logAction("delete-event", t ? (eventType(t).label + " " + formatDateRange(t.date, t.endDate)) : "");
   }
   function touchTraining(trainingId) {
     var t = data.trainings.find(function (x) { return x.id === trainingId; });
@@ -326,16 +438,25 @@ import {
     if (!data.attendance[trainingId]) data.attendance[trainingId] = {};
     data.attendance[trainingId][memberId] = value;
     var t = touchTraining(trainingId);
-    pushLog("attendance", t ? formatDateRange(t.date, t.endDate) : "", trainingId);
-    saveData(); render();
+    render();
+    var writes = [setDoc(doc(attendanceCol, trainingId + "_" + memberId), { trainingId: trainingId, memberId: memberId, present: value })];
+    if (t) writes.push(setDoc(doc(trainingsCol, trainingId), { lastEditedBy: ui.code, lastEditedAt: Date.now() }, { merge: true }));
+    withSaving(Promise.all(writes));
+    logAction("attendance", t ? formatDateRange(t.date, t.endDate) : "", trainingId);
   }
   function markAll(trainingId, value) {
     var obj = {};
     data.members.forEach(function (m) { obj[m.id] = value; });
     data.attendance[trainingId] = obj;
     var t = touchTraining(trainingId);
-    pushLog("attendance", t ? formatDateRange(t.date, t.endDate) : "", trainingId);
-    saveData(); render();
+    render();
+    var batch = writeBatch(db);
+    data.members.forEach(function (m) {
+      batch.set(doc(attendanceCol, trainingId + "_" + m.id), { trainingId: trainingId, memberId: m.id, present: value });
+    });
+    batch.set(doc(trainingsCol, trainingId), { lastEditedBy: ui.code, lastEditedAt: Date.now() }, { merge: true });
+    withSaving(batch.commit());
+    logAction("attendance", t ? formatDateRange(t.date, t.endDate) : "", trainingId);
   }
 
   // ---------- rendering ----------
