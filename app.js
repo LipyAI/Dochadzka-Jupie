@@ -7,7 +7,7 @@ import {
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.6.0";
+  var APP_VERSION = "1.7.0";
   var ADMIN_CODE = "293919";
   var LOGIN_KEY = "dochadzka-login-code";
   var THEME_KEY = "dochadzka-theme";
@@ -28,6 +28,7 @@ import {
     "delete-event": "vymazal(a) udalosť",
     "delete-member": "vymazal(a) hráča",
     "rename-member": "premenoval(a) hráča",
+    "edit-event": "upravil(a) udalosť",
   };
 
   var WEEKDAYS_SK = ["Po", "Ut", "St", "Št", "Pi", "So", "Ne"];
@@ -61,6 +62,12 @@ import {
   function formatEventWhen(t) {
     var base = formatDateRange(t.date, t.endDate);
     return t.time ? base + " \u00b7 " + t.time : base;
+  }
+  function presentWord(t) {
+    return (t.type || "trening") === "trening" ? "prítomných" : "nominovaných";
+  }
+  function presentWordCap(t) {
+    return (t.type || "trening") === "trening" ? "Prítomných" : "Nominovaných";
   }
   function formatDateTime(ts) {
     var d = new Date(ts);
@@ -266,6 +273,8 @@ import {
     mainCalYear: new Date().getFullYear(),
     mainCalMonth: new Date().getMonth(),
     isEditingMember: false,
+    isEditingTraining: false,
+    editTrainingDraft: {},
     editingName: "",
     newMemberName: "",
     newTrainingDate: todayISO(),
@@ -369,6 +378,7 @@ import {
   function removeMember(id) {
     if (!isAdmin()) return;
     var m = data.members.find(function (x) { return x.id === id; });
+    if (!window.confirm("Naozaj vymaza\u0165 hr\u00e1\u010da " + (m ? m.name : "") + "? Zma\u017e\u00fa sa aj v\u0161etky jeho z\u00e1znamy doch\u00e1dzky.")) return;
     data.members = data.members.filter(function (x) { return x.id !== id; });
     var attIdsToDelete = [];
     Object.keys(data.attendance).forEach(function (trainingId) {
@@ -436,6 +446,7 @@ import {
   function removeTraining(id) {
     if (!isAdmin()) return;
     var t = data.trainings.find(function (x) { return x.id === id; });
+    if (!window.confirm("Naozaj vymaza\u0165 udalos\u0165 " + (t ? formatEventWhen(t) : "") + "? Zma\u017e\u00ed sa aj z\u00e1znam doch\u00e1dzky k nej.")) return;
     data.trainings = data.trainings.filter(function (x) { return x.id !== id; });
     var attIdsToDelete = data.attendance[id] ? Object.keys(data.attendance[id]).map(function (memberId) { return id + "_" + memberId; }) : [];
     delete data.attendance[id];
@@ -445,12 +456,42 @@ import {
     batch.delete(doc(trainingsCol, id));
     attIdsToDelete.forEach(function (attId) { batch.delete(doc(attendanceCol, attId)); });
     withSaving(batch.commit());
-    logAction("delete-event", t ? (eventType(t).label + " " + formatDateRange(t.date, t.endDate)) : "");
+    logAction("delete-event", t ? (eventType(t).label + " " + formatEventWhen(t)) : "");
   }
   function touchTraining(trainingId) {
     var t = data.trainings.find(function (x) { return x.id === trainingId; });
     if (t) { t.lastEditedBy = ui.code; t.lastEditedAt = Date.now(); }
     return t;
+  }
+  function startEditTraining(id) {
+    if (!isAdmin()) return;
+    var t = data.trainings.find(function (x) { return x.id === id; });
+    if (!t) return;
+    ui.editTrainingDraft = { date: t.date, endDate: t.endDate || "", time: t.time || "", note: t.note || "", type: t.type || "trening" };
+    ui.isEditingTraining = true;
+    render();
+  }
+  function cancelEditTraining() {
+    ui.isEditingTraining = false;
+    render();
+  }
+  function saveEditTraining(id) {
+    if (!isAdmin()) return;
+    var d = ui.editTrainingDraft;
+    if (!d.date) return;
+    var t = data.trainings.find(function (x) { return x.id === id; });
+    if (!t) return;
+    var endDate = d.endDate && d.endDate > d.date ? d.endDate : null;
+    t.date = d.date; t.endDate = endDate; t.time = d.time || null; t.note = d.note.trim(); t.type = d.type;
+    t.lastEditedBy = ui.code; t.lastEditedAt = Date.now();
+    data.trainings.sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+    ui.isEditingTraining = false;
+    render();
+    withSaving(setDoc(doc(trainingsCol, id), {
+      date: t.date, endDate: t.endDate, time: t.time, note: t.note, type: t.type,
+      lastEditedBy: t.lastEditedBy, lastEditedAt: t.lastEditedAt,
+    }, { merge: true }));
+    logAction("edit-event", eventType(t).label + " " + formatEventWhen(t));
   }
   function setMemberAttendance(trainingId, memberId, value) {
     if (!data.attendance[trainingId]) data.attendance[trainingId] = {};
@@ -605,7 +646,7 @@ import {
       html += '<span class="badge" style="background:' + def.bg + ";color:" + def.text + '">' + esc(def.label) + "</span>";
       html += "</div>";
       if (t.note) html += '<div class="small">' + esc(t.note) + "</div>";
-      html += '<div class="small">' + presentCount + " / " + data.members.length + " prítomných</div>";
+      html += '<div class="small">' + presentCount + " / " + data.members.length + " " + presentWord(t) + "</div>";
       html += "</div>";
     });
     return html;
@@ -678,7 +719,7 @@ import {
         html += '<span class="badge" style="background:' + def.bg + ";color:" + def.text + '">' + esc(def.label) + "</span>";
         html += "</div>";
         if (t.note) html += '<div class="small">' + esc(t.note) + "</div>";
-        html += '<div class="small">' + presentCount + " / " + data.members.length + " prítomných</div>";
+        html += '<div class="small">' + presentCount + " / " + data.members.length + " " + presentWord(t) + "</div>";
         html += "</div>";
         if (isAdmin()) html += '<button class="icon-btn" data-action="remove-training" data-id="' + t.id + '">\uD83D\uDDD1\uFE0F</button>';
         html += "</div></div>";
@@ -696,15 +737,44 @@ import {
 
     var html = '<div class="row" style="margin-bottom:12px">';
     html += '<button class="btn" data-action="back-training">\u2b05\ufe0f Späť</button>';
-    html += '<button class="btn" data-action="duplicate-training" data-id="' + t.id + '">\ud83d\udd01 Zopakova\u0165 o t\u00fd\u017ede\u0148</button>';
-    html += "</div>";
+    html += '<div style="display:flex;gap:8px">';
+    html += '<button class="btn" data-action="duplicate-training" data-id="' + t.id + '">\ud83d\udd01 O t\u00fd\u017ede\u0148</button>';
+    if (isAdmin() && !ui.isEditingTraining) html += '<button class="btn" data-action="edit-training" data-id="' + t.id + '">\u270f\ufe0f Upravi\u0165</button>';
+    html += "</div></div>";
+
+    if (ui.isEditingTraining) {
+      var d = ui.editTrainingDraft;
+      html += '<div class="card" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">';
+      html += '<div class="type-picker">';
+      Object.keys(EVENT_TYPES).forEach(function (key) {
+        var edef = EVENT_TYPES[key];
+        var active = d.type === key;
+        var style = active ? "border-color:" + edef.color + ";background:" + edef.bg + ";color:" + edef.text + ";font-weight:600;" : "";
+        html += '<button class="type-btn' + (active ? " active" : "") + '" style="' + style + '" data-action="set-edit-type" data-type="' + key + '">' + esc(edef.label) + "</button>";
+      });
+      html += "</div>";
+      html += '<div class="row">';
+      html += '<input type="date" id="input-edit-td-date" value="' + esc(d.date) + '" />';
+      if (d.type === "turnaj") {
+        html += '<span class="small">do</span>';
+        html += '<input type="date" id="input-edit-td-enddate" value="' + esc(d.endDate) + '" min="' + esc(d.date) + '" />';
+      }
+      html += "</div>";
+      html += '<input type="time" id="input-edit-td-time" value="' + esc(d.time) + '" />';
+      html += '<input type="text" id="input-edit-td-note" placeholder="Poznámka (nepovinné)" value="' + esc(d.note) + '" />';
+      html += '<div style="display:flex;gap:8px">';
+      html += '<button class="btn-primary" data-action="save-training-edit" data-id="' + t.id + '">Uložiť</button>';
+      html += '<button class="btn" data-action="cancel-training-edit">Zrušiť</button>';
+      html += "</div></div>";
+    }
+
     html += '<div style="margin-bottom:12px">';
     html += '<div class="row" style="justify-content:flex-start;gap:8px">';
     html += '<span style="font-weight:600;font-size:16px">' + esc(formatEventWhen(t)) + "</span>";
     html += '<span class="badge" style="background:' + def.bg + ";color:" + def.text + '">' + esc(def.label) + "</span>";
     html += "</div>";
     if (t.note) html += '<div class="small">' + esc(t.note) + "</div>";
-    html += '<div class="small">Prítomných: ' + presentCount + " / " + data.members.length + "</div>";
+    html += '<div class="small">' + presentWordCap(t) + ": " + presentCount + " / " + data.members.length + "</div>";
     if (isAdmin()) {
       if (t.createdBy) html += '<div class="small">Vytvoril k\u00f3d: ' + esc(t.createdBy) + "</div>";
       if (t.lastEditedBy) html += '<div class="small">Naposledy upravil k\u00f3d: ' + esc(t.lastEditedBy) + " (" + formatDateTime(t.lastEditedAt) + ")</div>";
@@ -922,6 +992,14 @@ import {
         }
       });
     }
+    var editTdDateEl = document.getElementById("input-edit-td-date");
+    if (editTdDateEl) editTdDateEl.addEventListener("change", function (e) { ui.editTrainingDraft.date = e.target.value; render(); });
+    var editTdEndDateEl = document.getElementById("input-edit-td-enddate");
+    if (editTdEndDateEl) editTdEndDateEl.addEventListener("change", function (e) { ui.editTrainingDraft.endDate = e.target.value; });
+    var editTdTimeEl = document.getElementById("input-edit-td-time");
+    if (editTdTimeEl) editTdTimeEl.addEventListener("change", function (e) { ui.editTrainingDraft.time = e.target.value; });
+    var editTdNoteEl = document.getElementById("input-edit-td-note");
+    if (editTdNoteEl) editTdNoteEl.addEventListener("input", function (e) { ui.editTrainingDraft.note = e.target.value; });
   }
 
   document.addEventListener("click", function (e) {
@@ -943,8 +1021,12 @@ import {
       case "set-type": ui.newTrainingType = el.getAttribute("data-type"); render(); break;
       case "quickday": ui.newTrainingDate = nextWeekday(parseInt(el.getAttribute("data-day"), 10)); render(); break;
       case "add-training": addTraining(); break;
-      case "duplicate-training": duplicateTraining(el.getAttribute("data-id")); break;
-      case "open-training": ui.selectedTrainingId = el.getAttribute("data-id"); render(); break;
+      case "duplicate-training": ui.isEditingTraining = false; duplicateTraining(el.getAttribute("data-id")); break;
+      case "open-training": ui.selectedTrainingId = el.getAttribute("data-id"); ui.isEditingTraining = false; render(); break;
+      case "edit-training": startEditTraining(el.getAttribute("data-id")); break;
+      case "cancel-training-edit": cancelEditTraining(); break;
+      case "save-training-edit": saveEditTraining(el.getAttribute("data-id")); break;
+      case "set-edit-type": ui.editTrainingDraft.type = el.getAttribute("data-type"); render(); break;
       case "open-day": ui.selectedDayIso = el.getAttribute("data-iso"); render(); break;
       case "back-day": ui.selectedDayIso = null; render(); break;
       case "add-on-day":
@@ -953,7 +1035,7 @@ import {
         ui.tab = "trainings";
         render();
         break;
-      case "back-training": ui.selectedTrainingId = null; render(); break;
+      case "back-training": ui.selectedTrainingId = null; ui.isEditingTraining = false; render(); break;
       case "remove-training": removeTraining(el.getAttribute("data-id")); break;
       case "mark-all": markAll(el.getAttribute("data-id"), el.getAttribute("data-value") === "true"); break;
       case "set-att": setMemberAttendance(el.getAttribute("data-training"), el.getAttribute("data-member"), el.getAttribute("data-value") === "true"); break;

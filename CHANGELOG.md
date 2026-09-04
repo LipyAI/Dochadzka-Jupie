@@ -4,6 +4,13 @@ Pri každej väčšej úprave appky sa sem pridá nový riadok s číslom verzie
 (rovnaké číslo, aké appka zobrazuje pod nadpisom, aby sa dalo overiť,
 či je nasadená naozaj tá najnovšia).
 
+## 1.7.0
+- Potvrdenie pred vymazaním hráča alebo udalosti (ochrana pred omylom).
+- Úprava existujúcej udalosti (dátum, čas, typ, poznámka) — admin už
+  nemusí kvôli chybe udalosť mazať a vytvárať znova.
+- Texty pri zápasoch/turnajoch teraz hovoria o "nominovaných" namiesto
+  "prítomných" (štatistika sa aj naďalej počíta iba z tréningov).
+
 ## 1.6.0
 - Pridané voliteľné pole "Čas" pri vytváraní udalosti (hodí sa najmä
   pri zápasoch) — zobrazuje sa pri dátume v zozname aj detaile udalosti.
