@@ -4,6 +4,10 @@ Pri každej väčšej úprave appky sa sem pridá nový riadok s číslom verzie
 (rovnaké číslo, aké appka zobrazuje pod nadpisom, aby sa dalo overiť,
 či je nasadená naozaj tá najnovšia).
 
+## 1.12.1
+- MatDrd má namiesto odznaku "Tréner" odznak "Vedúci" (rovnaké práva ako
+  ostatní tréneri, len iné pomenovanie v appke).
+
 ## 1.12.0
 - Nová rola "Tréner" (LukPsi, MarTom, MatDrd) - smie upravovať existujúce
   udalosti (tréningy/zápasy/turnaje), rovnako ako admin. Nemá ale plné

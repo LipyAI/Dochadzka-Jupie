@@ -7,12 +7,13 @@ import {
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.12.0";
+  var APP_VERSION = "1.12.1";
   var ADMIN_USERNAME = "LubLip";
-  // Tréneri: smú upravovať existujúce udalosti (pridávať ich už môže ktokoľvek
-  // prihlásený), ale nemajú plné admin práva (mazanie hráčov/udalostí,
-  // premenovanie hráčov, záložka Aktivita, záloha dát).
-  var TRAINER_USERNAMES = ["LukPsi", "MarTom", "MatDrd"];
+  // Tréneri a vedúci: smú upravovať existujúce udalosti (pridávať ich už
+  // môže ktokoľvek prihlásený), ale nemajú plné admin práva (mazanie
+  // hráčov/udalostí, premenovanie hráčov, záložka Aktivita, záloha dát).
+  var TRAINER_USERNAMES = ["LukPsi", "MarTom"];
+  var MANAGER_USERNAMES = ["MatDrd"];
   var LOGIN_KEY = "dochadzka-login-code";
   var THEME_KEY = "dochadzka-theme";
   var BIO_CRED_KEY = "dochadzka-bio-credential";
@@ -476,7 +477,8 @@ import {
 
   function isAdmin() { return ui.code === ADMIN_USERNAME; }
   function isTrainer() { return TRAINER_USERNAMES.indexOf(ui.code) !== -1; }
-  function canEditEvents() { return isAdmin() || isTrainer(); }
+  function isManager() { return MANAGER_USERNAMES.indexOf(ui.code) !== -1; }
+  function canEditEvents() { return isAdmin() || isTrainer() || isManager(); }
 
   function sortedMembers() {
     return data.members.slice().sort(function (a, b) { return a.name.localeCompare(b.name, "sk"); });
@@ -774,7 +776,10 @@ import {
     }
 
     html += '<div class="row session-row">';
-    var rolePill = isAdmin() ? ' <span class="admin-pill">Admin</span>' : (isTrainer() ? ' <span class="admin-pill trainer-pill">Tréner</span>' : "");
+    var rolePill = isAdmin() ? ' <span class="admin-pill">Admin</span>'
+      : isManager() ? ' <span class="admin-pill trainer-pill">Vedúci</span>'
+      : isTrainer() ? ' <span class="admin-pill trainer-pill">Tréner</span>'
+      : "";
     html += '<span class="small">Prihl\u00e1sen\u00fd: ' + esc(ui.code) + rolePill + '</span>';
     html += '<a href="#" data-action="logout" class="small logout-link">Odhl\u00e1si\u0165</a>';
     html += "</div>";
