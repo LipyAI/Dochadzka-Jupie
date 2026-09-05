@@ -4,6 +4,14 @@ Pri každej väčšej úprave appky sa sem pridá nový riadok s číslom verzie
 (rovnaké číslo, aké appka zobrazuje pod nadpisom, aby sa dalo overiť,
 či je nasadená naozaj tá najnovšia).
 
+## 1.12.0
+- Nová rola "Tréner" (LukPsi, MarTom, MatDrd) - smie upravovať existujúce
+  udalosti (tréningy/zápasy/turnaje), rovnako ako admin. Nemá ale plné
+  admin práva: nemôže mazať hráčov ani udalosti, premenovať hráčov, ani
+  vidieť záložku Aktivita/zálohu dát. Vidno to aj v appke - vedľa mena sa
+  zobrazí odznak "Tréner". (Pridávanie udalostí mohol robiť ktokoľvek
+  prihlásený už predtým, to sa nemení.)
+
 ## 1.11.0
 - Prihlasovanie prerobené z voľne zvolených 6-miestnych kódov na skutočné
   účty: prihlasovacie meno vzniká automaticky z mena a priezviska (prvé
