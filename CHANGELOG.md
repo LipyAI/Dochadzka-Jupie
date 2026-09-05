@@ -4,6 +4,14 @@ Pri každej väčšej úprave appky sa sem pridá nový riadok s číslom verzie
 (rovnaké číslo, aké appka zobrazuje pod nadpisom, aby sa dalo overiť,
 či je nasadená naozaj tá najnovšia).
 
+## 1.10.0
+- Prihlásenie cez Face ID / odtlačok prsta (WebAuthn) ako pohodlnejšia
+  alternatíva k písaniu 6-miestneho kódu. Po prvom prihlásení kódom appka
+  ponúkne nastavenie - kód sa potom bezpečne uloží len v danom telefóne
+  a nabudúce ho odomkne biometrika. Ide o pohodlie na danom zariadení, nie
+  o overenie identity cez server (appka nemá vlastný backend) - kód sa
+  dá kedykoľvek "zabudnúť" priamo na prihlasovacej obrazovke.
+
 ## 1.9.0
 - Emoji ikony nahradené jednotnými SVG ikonami (tak vyzerajú rovnako na
   všetkých telefónoch/prehliadačoch namiesto pestrofarebných emoji, ktoré
