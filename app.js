@@ -7,8 +7,8 @@ import {
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.10.0";
-  var ADMIN_CODE = "293919";
+  var APP_VERSION = "1.11.0";
+  var ADMIN_USERNAME = "LubLip";
   var LOGIN_KEY = "dochadzka-login-code";
   var THEME_KEY = "dochadzka-theme";
   var BIO_CRED_KEY = "dochadzka-bio-credential";
@@ -47,7 +47,24 @@ import {
     return y + "-" + m + "-" + day;
   }
   function todayISO() { return isoDate(new Date()); }
-  function isValidCode(s) { return /^\d{6}$/.test(String(s || "").trim()); }
+  function stripDiacritics(s) {
+    return String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  }
+  function computeUsername(fullName) {
+    var parts = stripDiacritics(fullName).trim().split(/\s+/).filter(Boolean);
+    if (parts.length < 2) return "";
+    function chunk(word) {
+      var letters = word.replace(/[^a-zA-Z]/g, "").slice(0, 3);
+      if (!letters) return "";
+      return letters.charAt(0).toUpperCase() + letters.slice(1).toLowerCase();
+    }
+    var first = chunk(parts[0]);
+    var last = chunk(parts[parts.length - 1]);
+    return first && last ? first + last : "";
+  }
+  function isValidPassword(pw) {
+    return typeof pw === "string" && pw.length >= 8 && /[A-Z]/.test(pw) && /[a-z]/.test(pw) && /[0-9]/.test(pw);
+  }
   function formatDate(iso) {
     var d = new Date(iso + "T00:00:00");
     return d.toLocaleDateString("sk-SK", { day: "numeric", month: "short", year: "numeric" });
@@ -150,7 +167,7 @@ import {
   // ---------- shared (Firebase) state ----------
   var data = { members: [], trainings: [], attendance: {}, log: [] };
   var db;
-  var membersCol, trainingsCol, attendanceCol, logCol, metaDocRef, legacyDocRef;
+  var membersCol, trainingsCol, attendanceCol, logCol, accountsCol, metaDocRef, legacyDocRef;
 
   function initFirebase() {
     var cfg = window.FIREBASE_CONFIG;
@@ -165,6 +182,7 @@ import {
     trainingsCol = collection(db, "trainings");
     attendanceCol = collection(db, "attendance");
     logCol = collection(db, "activityLog");
+    accountsCol = collection(db, "accounts");
     metaDocRef = doc(db, "meta", "migration");
     legacyDocRef = doc(db, "dochadzka", "shared");
 
@@ -322,11 +340,58 @@ import {
     for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
     return bytes.buffer;
   }
-  function setupBiometricLogin(code) {
+  // ---------- accounts (username + password, PBKDF2-hashed) ----------
+  // Firestore rules stay wide open ("if true", see README) for simplicity, so
+  // anyone with the app URL could in principle read the accounts collection -
+  // hashing (rather than storing plaintext) and a high PBKDF2 iteration count
+  // at least make an offline crack of a leaked hash slow, consistent with the
+  // app's existing "closed circle of people, not a hardened login" stance.
+  var PBKDF2_ITERATIONS = 150000;
+  function randomSaltB64() { return bufToB64(crypto.getRandomValues(new Uint8Array(16))); }
+  function hashPassword(password, saltB64) {
+    return crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"])
+      .then(function (keyMaterial) {
+        return crypto.subtle.deriveBits(
+          { name: "PBKDF2", salt: b64ToBuf(saltB64), iterations: PBKDF2_ITERATIONS, hash: "SHA-256" },
+          keyMaterial, 256
+        );
+      })
+      .then(function (bits) { return bufToB64(bits); });
+  }
+  function verifyAccount(username, password) {
+    return getDoc(doc(accountsCol, username)).then(function (snap) {
+      if (!snap.exists()) throw new Error("Účet s týmto menom neexistuje.");
+      var acc = snap.data();
+      return hashPassword(password, acc.salt).then(function (hash) {
+        if (hash !== acc.hash) throw new Error("Nesprávne heslo.");
+      });
+    });
+  }
+  function registerAccount(fullName, password) {
+    var username = computeUsername(fullName);
+    if (!username) return Promise.reject(new Error("Zadaj meno aj priezvisko."));
+    if (!isValidPassword(password)) return Promise.reject(new Error("Heslo nespĺňa požiadavky."));
+    return getDoc(doc(accountsCol, username)).then(function (snap) {
+      if (snap.exists()) throw new Error("Prihlasovacie meno " + username + " je už obsadené. Ak si to ty, prihlás sa; inak kontaktuj admina.");
+      var salt = randomSaltB64();
+      return hashPassword(password, salt).then(function (hash) {
+        return setDoc(doc(accountsCol, username), { name: fullName.trim(), salt: salt, hash: hash, createdAt: Date.now() });
+      });
+    }).then(function () { return username; });
+  }
+
+  // ---------- biometric unlock (Face ID / odtlačok) ----------
+  // No backend server exists beyond Firestore, so this can't be "real"
+  // per-person identity verification tied to a session token - it's a local
+  // convenience: the device's own biometric sensor gates access to a
+  // username+password already saved on that same device, which are then
+  // re-checked against the account (so a changed/removed account still
+  // fails, unlike a blind local unlock).
+  function setupBiometricLogin(username, password) {
     return navigator.credentials.create({
       publicKey: {
         rp: { name: "Dochádzka na tréningu" },
-        user: { id: crypto.getRandomValues(new Uint8Array(16)), name: code, displayName: "Kód " + code },
+        user: { id: crypto.getRandomValues(new Uint8Array(16)), name: username, displayName: username },
         challenge: crypto.getRandomValues(new Uint8Array(32)),
         pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
         authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required" },
@@ -335,7 +400,7 @@ import {
       },
     }).then(function (cred) {
       localStorage.setItem(BIO_CRED_KEY, bufToB64(cred.rawId));
-      localStorage.setItem(BIO_CODE_KEY, code);
+      localStorage.setItem(BIO_CODE_KEY, JSON.stringify({ u: username, p: password }));
     });
   }
   function biometricLogin() {
@@ -350,9 +415,10 @@ import {
         timeout: 60000,
       },
     }).then(function () {
-      var code = localStorage.getItem(BIO_CODE_KEY);
-      if (!code) throw new Error("Uložený kód sa nenašiel.");
-      return code;
+      var raw = localStorage.getItem(BIO_CODE_KEY);
+      var creds = raw ? JSON.parse(raw) : null;
+      if (!creds || !creds.u || !creds.p) throw new Error("Uložené prihlásenie sa nenašlo.");
+      return verifyAccount(creds.u, creds.p).then(function () { return creds.u; });
     });
   }
   function forgetBiometricLogin() {
@@ -362,11 +428,18 @@ import {
   // ---------- transient UI state ----------
   var ui = {
     code: (function () { try { return sessionStorage.getItem(LOGIN_KEY) || null; } catch (e) { return null; } })(),
-    loginInputVal: "",
-    loginError: "",
+    authMode: "login",
+    loginUsernameVal: "",
+    loginPasswordVal: "",
+    regNameVal: "",
+    regPasswordVal: "",
+    regPasswordVal2: "",
+    authError: "",
+    authBusy: false,
     bioAvailable: false,
     bioBusy: false,
     showBioOffer: false,
+    pendingBioPassword: null,
     tab: "trainings",
     selectedTrainingId: null,
     selectedMemberId: null,
@@ -397,7 +470,7 @@ import {
     })(),
   };
 
-  function isAdmin() { return ui.code === ADMIN_CODE; }
+  function isAdmin() { return ui.code === ADMIN_USERNAME; }
 
   function sortedMembers() {
     return data.members.slice().sort(function (a, b) { return a.name.localeCompare(b.name, "sk"); });
@@ -450,21 +523,66 @@ import {
   }
 
   // ---------- mutations ----------
+  function completeLogin(username, password) {
+    ui.code = username;
+    ui.authError = "";
+    ui.authBusy = false;
+    try { sessionStorage.setItem(LOGIN_KEY, username); } catch (e) { /* ignore */ }
+    if (ui.bioAvailable && !hasBiometricLogin()) {
+      ui.showBioOffer = true;
+      ui.pendingBioPassword = password || null;
+    }
+    render();
+  }
   function login() {
-    if (!isValidCode(ui.loginInputVal)) {
-      ui.loginError = "Zadaj platný 6-miestny kód (len číslice).";
+    var username = ui.loginUsernameVal.trim();
+    var password = ui.loginPasswordVal;
+    if (!username || !password) {
+      ui.authError = "Zadaj prihlasovacie meno aj heslo.";
       render();
       return;
     }
-    ui.code = ui.loginInputVal.trim();
-    ui.loginError = "";
-    try { sessionStorage.setItem(LOGIN_KEY, ui.code); } catch (e) { /* ignore */ }
-    if (ui.bioAvailable && !hasBiometricLogin()) ui.showBioOffer = true;
-    render();
+    ui.authBusy = true; ui.authError = ""; render();
+    verifyAccount(username, password).then(function () {
+      completeLogin(username, password);
+    }).catch(function () {
+      ui.authBusy = false;
+      ui.authError = "Nesprávne prihlasovacie meno alebo heslo.";
+      render();
+    });
+  }
+  function register() {
+    var fullName = ui.regNameVal.trim();
+    var password = ui.regPasswordVal;
+    if (!computeUsername(fullName)) {
+      ui.authError = "Zadaj meno aj priezvisko (napr. Ján Novák).";
+      render();
+      return;
+    }
+    if (!isValidPassword(password)) {
+      ui.authError = "Heslo musí mať aspoň 8 znakov, veľké aj malé písmeno a číslicu.";
+      render();
+      return;
+    }
+    if (password !== ui.regPasswordVal2) {
+      ui.authError = "Heslá sa nezhodujú.";
+      render();
+      return;
+    }
+    ui.authBusy = true; ui.authError = ""; render();
+    registerAccount(fullName, password).then(function (username) {
+      completeLogin(username, password);
+    }).catch(function (err) {
+      ui.authBusy = false;
+      ui.authError = err.message;
+      render();
+    });
   }
   function logout() {
     ui.code = null;
-    ui.loginInputVal = "";
+    ui.loginUsernameVal = "";
+    ui.loginPasswordVal = "";
+    ui.authMode = "login";
     try { sessionStorage.removeItem(LOGIN_KEY); } catch (e) { /* ignore */ }
     render();
   }
@@ -650,7 +768,7 @@ import {
     }
 
     html += '<div class="row session-row">';
-    html += '<span class="small">K\u00f3d: ' + esc(ui.code) + (isAdmin() ? ' <span class="admin-pill">Admin</span>' : "") + '</span>';
+    html += '<span class="small">Prihl\u00e1sen\u00fd: ' + esc(ui.code) + (isAdmin() ? ' <span class="admin-pill">Admin</span>' : "") + '</span>';
     html += '<a href="#" data-action="logout" class="small logout-link">Odhl\u00e1si\u0165</a>';
     html += "</div>";
 
@@ -680,7 +798,7 @@ import {
     html += '<div class="row align-start" style="gap:10px">';
     html += svgIcon("faceid", "icon bio-offer-icon");
     html += '<div style="flex:1"><div style="font-weight:600;margin-bottom:2px">Pou\u017ei\u0165 Face ID / odtla\u010dok?</div>' +
-      '<div class="small">Nabudúce sa prihlásiš bez písania kódu. Kód sa uloží iba v tomto telefóne.</div></div>';
+      '<div class="small">Nabudúce sa prihlásiš bez písania mena a hesla. Prihlasovacie údaje sa uložia iba v tomto telefóne.</div></div>';
     html += "</div>";
     html += '<div style="display:flex;gap:8px;margin-top:10px">';
     html += '<button class="btn-primary" data-action="setup-bio" style="flex:1;justify-content:center">Nastavi\u0165</button>';
@@ -689,22 +807,56 @@ import {
     return html;
   }
 
+  function passwordRuleRow(rule, pw, label) {
+    var ok = {
+      len: pw.length >= 8,
+      upper: /[A-Z]/.test(pw),
+      lower: /[a-z]/.test(pw),
+      digit: /[0-9]/.test(pw),
+    }[rule];
+    return '<li class="rule' + (ok ? " ok" : "") + '" data-rule="' + rule + '">' + svgIcon("check", "icon rule-icon") + esc(label) + "</li>";
+  }
+
   function renderLogin() {
     var bioReady = ui.bioAvailable && hasBiometricLogin();
     var html = '<div class="login-screen"><div class="card login-card">';
     html += '<img class="login-logo" src="icon-192.png" alt="" />';
-    html += '<div class="login-title">Zadaj sv\u00f4j 6-miestny k\u00f3d</div>';
-    html += '<div class="small login-hint">K\u00f3d si zvol\u00ed\u0161 s\u00e1m. Po zatvoren\u00ed appky bude\u0161 musie\u0165 k\u00f3d zada\u0165 znova.</div>';
-    if (bioReady) {
-      html += '<button class="btn-primary login-btn bio-btn" data-action="bio-login"' + (ui.bioBusy ? " disabled" : "") + '>' +
-        svgIcon("faceid") + (ui.bioBusy ? " Over\u0165 sa\u2026" : " Face ID / odtla\u010dok") + "</button>";
-      html += '<div class="login-divider"><span>alebo k\u00f3dom</span></div>';
+
+    if (ui.authMode === "register") {
+      var pw = ui.regPasswordVal;
+      var uname = computeUsername(ui.regNameVal);
+      html += '<div class="login-title">Vytvor si \u00fa\u010det</div>';
+      html += '<div class="small login-hint">Prihlasovacie meno vznikne automaticky z tvojho mena a priezviska.</div>';
+      html += '<input type="text" id="input-reg-name" class="auth-input" placeholder="Meno a priezvisko" autocapitalize="words" value="' + esc(ui.regNameVal) + '" />';
+      html += '<div class="username-preview">Prihlasovacie meno: <strong id="username-preview">' + esc(uname || "\u2014") + "</strong></div>";
+      html += '<input type="password" id="input-reg-password" class="auth-input" placeholder="Heslo" value="' + esc(ui.regPasswordVal) + '" />';
+      html += '<input type="password" id="input-reg-password2" class="auth-input" placeholder="Zopakuj heslo" value="' + esc(ui.regPasswordVal2) + '" />';
+      html += '<ul class="password-rules">';
+      html += passwordRuleRow("len", pw, "aspo\u0148 8 znakov");
+      html += passwordRuleRow("upper", pw, "ve\u013ek\u00e9 p\u00edsmeno");
+      html += passwordRuleRow("lower", pw, "mal\u00e9 p\u00edsmeno");
+      html += passwordRuleRow("digit", pw, "\u010d\u00edslicu");
+      html += "</ul>";
+      if (ui.authError) html += '<div class="error" style="display:block;margin-bottom:10px">' + esc(ui.authError) + "</div>";
+      html += '<button class="btn-primary login-btn" data-action="register"' + (ui.authBusy ? " disabled" : "") + '>' +
+        (ui.authBusy ? "Vytv\u00e1ram \u00fa\u010det\u2026" : "Vytvori\u0165 \u00fa\u010det") + "</button>";
+      html += '<a href="#" class="small auth-toggle-link" data-action="toggle-auth-mode">U\u017e m\u00e1\u0161 \u00fa\u010det? Prihl\u00e1s sa</a>';
+    } else {
+      html += '<div class="login-title">Prihl\u00e1s sa</div>';
+      html += '<div class="small login-hint">Zadaj svoje prihlasovacie meno a heslo.</div>';
+      if (bioReady) {
+        html += '<button class="btn-primary login-btn bio-btn" data-action="bio-login"' + (ui.bioBusy ? " disabled" : "") + '>' +
+          svgIcon("faceid") + (ui.bioBusy ? " Over\u0165 sa\u2026" : " Face ID / odtla\u010dok") + "</button>";
+        html += '<div class="login-divider"><span>alebo menom a heslom</span></div>';
+      }
+      html += '<input type="text" id="input-login-username" class="auth-input" placeholder="Prihlasovacie meno" autocapitalize="none" value="' + esc(ui.loginUsernameVal) + '" />';
+      html += '<input type="password" id="input-login-password" class="auth-input" placeholder="Heslo" value="' + esc(ui.loginPasswordVal) + '" />';
+      if (ui.authError) html += '<div class="error" style="display:block;margin-bottom:10px">' + esc(ui.authError) + "</div>";
+      html += '<button class="btn-primary login-btn" data-action="login"' + (ui.authBusy ? " disabled" : "") + '>' +
+        (ui.authBusy ? "Prihlasujem\u2026" : "Prihl\u00e1si\u0165") + "</button>";
+      html += '<a href="#" class="small auth-toggle-link" data-action="toggle-auth-mode">Nem\u00e1\u0161 e\u0161te \u00fa\u010det? Vytvor si ho</a>';
+      if (bioReady) html += '<a href="#" class="small bio-forget-link" data-action="forget-bio">Zabudn\u00fa\u0165 Face ID / odtla\u010dok na tomto telef\u00f3ne</a>';
     }
-    html += '<input type="tel" inputmode="numeric" maxlength="6" id="input-login-code" class="login-code-input" placeholder="\u2022\u2022\u2022\u2022\u2022\u2022" ' +
-      'value="' + esc(ui.loginInputVal) + '" />';
-    if (ui.loginError) html += '<div class="error" style="display:block;margin-bottom:10px">' + esc(ui.loginError) + "</div>";
-    html += '<button class="btn-primary login-btn" data-action="login">Vst\u00fapi\u0165</button>';
-    if (bioReady) html += '<a href="#" class="small bio-forget-link" data-action="forget-bio">Zabudn\u00fa\u0165 Face ID / odtla\u010dok na tomto telef\u00f3ne</a>';
     html += "</div></div>";
     return html;
   }
@@ -905,8 +1057,8 @@ import {
     if (t.note) html += '<div class="small">' + esc(t.note) + "</div>";
     html += '<div class="small">' + presentWordCap(t) + ": " + presentCount + " / " + data.members.length + "</div>";
     if (isAdmin()) {
-      if (t.createdBy) html += '<div class="small">Vytvoril k\u00f3d: ' + esc(t.createdBy) + "</div>";
-      if (t.lastEditedBy) html += '<div class="small">Naposledy upravil k\u00f3d: ' + esc(t.lastEditedBy) + " (" + formatDateTime(t.lastEditedAt) + ")</div>";
+      if (t.createdBy) html += '<div class="small">Vytvoril: ' + esc(t.createdBy) + "</div>";
+      if (t.lastEditedBy) html += '<div class="small">Naposledy upravil: ' + esc(t.lastEditedBy) + " (" + formatDateTime(t.lastEditedAt) + ")</div>";
     }
     html += "</div>";
 
@@ -1107,12 +1259,40 @@ import {
 
   // ---------- events ----------
   function bindEvents() {
-    var loginEl = document.getElementById("input-login-code");
-    if (loginEl) {
-      loginEl.addEventListener("input", function (e) { ui.loginInputVal = e.target.value.replace(/\D/g, "").slice(0, 6); e.target.value = ui.loginInputVal; });
-      loginEl.addEventListener("keydown", function (e) { if (e.key === "Enter") login(); });
-      loginEl.focus();
+    var loginUserEl = document.getElementById("input-login-username");
+    if (loginUserEl) {
+      loginUserEl.addEventListener("input", function (e) { ui.loginUsernameVal = e.target.value; });
+      loginUserEl.addEventListener("keydown", function (e) { if (e.key === "Enter") login(); });
+      loginUserEl.focus();
     }
+    var loginPwEl = document.getElementById("input-login-password");
+    if (loginPwEl) {
+      loginPwEl.addEventListener("input", function (e) { ui.loginPasswordVal = e.target.value; });
+      loginPwEl.addEventListener("keydown", function (e) { if (e.key === "Enter") login(); });
+    }
+    var regNameEl = document.getElementById("input-reg-name");
+    if (regNameEl) {
+      regNameEl.addEventListener("input", function (e) {
+        ui.regNameVal = e.target.value;
+        var preview = document.getElementById("username-preview");
+        if (preview) preview.textContent = computeUsername(ui.regNameVal) || "—";
+      });
+      regNameEl.focus();
+    }
+    var regPwEl = document.getElementById("input-reg-password");
+    if (regPwEl) {
+      regPwEl.addEventListener("input", function (e) {
+        ui.regPasswordVal = e.target.value;
+        var pw = ui.regPasswordVal;
+        var checks = { len: pw.length >= 8, upper: /[A-Z]/.test(pw), lower: /[a-z]/.test(pw), digit: /[0-9]/.test(pw) };
+        Object.keys(checks).forEach(function (key) {
+          var li = document.querySelector('.password-rules [data-rule="' + key + '"]');
+          if (li) li.classList.toggle("ok", checks[key]);
+        });
+      });
+    }
+    var regPw2El = document.getElementById("input-reg-password2");
+    if (regPw2El) regPw2El.addEventListener("input", function (e) { ui.regPasswordVal2 = e.target.value; });
     var dateEl = document.getElementById("input-new-date");
     if (dateEl) dateEl.addEventListener("change", function (e) { ui.newTrainingDate = e.target.value; render(); });
     var endDateEl = document.getElementById("input-new-enddate");
@@ -1157,28 +1337,34 @@ import {
       case "logout": logout(); break;
       case "bio-login":
         if (ui.bioBusy) break;
-        ui.bioBusy = true; ui.loginError = ""; render();
-        biometricLogin().then(function (code) {
-          ui.code = code; ui.bioBusy = false;
-          try { sessionStorage.setItem(LOGIN_KEY, code); } catch (err) { /* ignore */ }
+        ui.bioBusy = true; ui.authError = ""; render();
+        biometricLogin().then(function (username) {
+          ui.code = username; ui.bioBusy = false;
+          try { sessionStorage.setItem(LOGIN_KEY, username); } catch (err) { /* ignore */ }
           render();
         }).catch(function (err) {
           ui.bioBusy = false;
-          ui.loginError = "Face ID / odtlačok zlyhal (" + err.message + "). Skús to znova alebo zadaj kód.";
+          ui.authError = "Face ID / odtlačok zlyhal (" + err.message + "). Skús to znova alebo zadaj meno a heslo.";
           render();
         });
         break;
       case "setup-bio":
-        setupBiometricLogin(ui.code).then(function () {
-          ui.showBioOffer = false; render();
+        setupBiometricLogin(ui.code, ui.pendingBioPassword).then(function () {
+          ui.showBioOffer = false; ui.pendingBioPassword = null; render();
         }).catch(function (err) {
-          ui.showBioOffer = false;
+          ui.showBioOffer = false; ui.pendingBioPassword = null;
           ui.error = "Nepodarilo sa nastaviť Face ID / odtlačok: " + err.message;
           render();
         });
         break;
-      case "dismiss-bio-offer": ui.showBioOffer = false; render(); break;
+      case "dismiss-bio-offer": ui.showBioOffer = false; ui.pendingBioPassword = null; render(); break;
       case "forget-bio": forgetBiometricLogin(); render(); break;
+      case "toggle-auth-mode":
+        ui.authMode = ui.authMode === "login" ? "register" : "login";
+        ui.authError = "";
+        render();
+        break;
+      case "register": register(); break;
       case "toggle-theme":
         ui.theme = ui.theme === "dark" ? "light" : "dark";
         try { localStorage.setItem(THEME_KEY, ui.theme); } catch (e) { /* ignore */ }
