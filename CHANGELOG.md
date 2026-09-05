@@ -4,6 +4,15 @@ Pri každej väčšej úprave appky sa sem pridá nový riadok s číslom verzie
 (rovnaké číslo, aké appka zobrazuje pod nadpisom, aby sa dalo overiť,
 či je nasadená naozaj tá najnovšia).
 
+## 1.9.0
+- Emoji ikony nahradené jednotnými SVG ikonami (tak vyzerajú rovnako na
+  všetkých telefónoch/prehliadačoch namiesto pestrofarebných emoji, ktoré
+  sa všade zobrazujú inak).
+- Jemný "sklenený" efekt (rozmazanie pozadia) na hlavičke a spodnej lište.
+- Väčšie tlačidlá pri zapisovaní dochádzky (ľahšie sa trafí prstom).
+- Ikona v prázdnych stavoch (napr. "Zatiaľ žiadna aktivita").
+- Viditeľný focus indikátor pre ovládanie klávesnicou / čítačky obrazovky.
+
 ## 1.8.1
 - Oprava chyby v `service-worker.js`: odkazoval na ikony v neexistujúcom
   priečinku `icons/`, čo spôsobovalo, že sa nová verzia appky nikdy
