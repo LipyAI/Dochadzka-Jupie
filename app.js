@@ -7,10 +7,12 @@ import {
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.9.0";
+  var APP_VERSION = "1.10.0";
   var ADMIN_CODE = "293919";
   var LOGIN_KEY = "dochadzka-login-code";
   var THEME_KEY = "dochadzka-theme";
+  var BIO_CRED_KEY = "dochadzka-bio-credential";
+  var BIO_CODE_KEY = "dochadzka-bio-code";
 
   function applyTheme(theme) {
     document.documentElement.classList.toggle("dark", theme === "dark");
@@ -120,7 +122,9 @@ import {
     check: '<path d="M20 6L9 17l-5-5"/>',
     x: '<path d="M18 6L6 18M6 6l12 12"/>',
     download: '<path d="M12 3v12M7 10l5 5 5-5M4 21h16"/>',
-    inbox: '<path d="M4 12h4l2 3h4l2-3h4"/><path d="M5.5 5h13l2.5 7v7a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-7z"/>'
+    inbox: '<path d="M4 12h4l2 3h4l2-3h4"/><path d="M5.5 5h13l2.5 7v7a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-7z"/>',
+    faceid: '<path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2"/>' +
+      '<circle cx="9" cy="10" r="1"/><circle cx="15" cy="10" r="1"/><path d="M9 15c1 1 5 1 6 0"/>'
   };
   function svgIcon(name, cls) {
     return '<svg class="' + (cls || "icon") + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
@@ -297,11 +301,72 @@ import {
     withSaving(addDoc(logCol, { ts: now, code: ui.code, action: action, detail: detail || "", _key: key }));
   }
 
+  // ---------- biometric unlock (Face ID / odtlačok) ----------
+  // No backend server exists, so this can't be "real" per-person identity
+  // verification - it's a local convenience: the device's own biometric
+  // sensor gates access to a login code already saved on that same device,
+  // so the code doesn't have to be retyped every time the app is reopened.
+  function biometricSupported() {
+    return !!(window.PublicKeyCredential && navigator.credentials && navigator.credentials.create);
+  }
+  function hasBiometricLogin() {
+    try { return !!localStorage.getItem(BIO_CRED_KEY); } catch (e) { return false; }
+  }
+  function bufToB64(buf) {
+    var bytes = new Uint8Array(buf), str = "";
+    for (var i = 0; i < bytes.length; i++) str += String.fromCharCode(bytes[i]);
+    return btoa(str);
+  }
+  function b64ToBuf(b64) {
+    var bin = atob(b64), bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return bytes.buffer;
+  }
+  function setupBiometricLogin(code) {
+    return navigator.credentials.create({
+      publicKey: {
+        rp: { name: "Dochádzka na tréningu" },
+        user: { id: crypto.getRandomValues(new Uint8Array(16)), name: code, displayName: "Kód " + code },
+        challenge: crypto.getRandomValues(new Uint8Array(32)),
+        pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
+        authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required" },
+        timeout: 60000,
+        attestation: "none",
+      },
+    }).then(function (cred) {
+      localStorage.setItem(BIO_CRED_KEY, bufToB64(cred.rawId));
+      localStorage.setItem(BIO_CODE_KEY, code);
+    });
+  }
+  function biometricLogin() {
+    var credId;
+    try { credId = localStorage.getItem(BIO_CRED_KEY); } catch (e) { credId = null; }
+    if (!credId) return Promise.reject(new Error("Face ID / odtlačok nie je na tomto telefóne nastavený."));
+    return navigator.credentials.get({
+      publicKey: {
+        challenge: crypto.getRandomValues(new Uint8Array(32)),
+        allowCredentials: [{ id: b64ToBuf(credId), type: "public-key" }],
+        userVerification: "required",
+        timeout: 60000,
+      },
+    }).then(function () {
+      var code = localStorage.getItem(BIO_CODE_KEY);
+      if (!code) throw new Error("Uložený kód sa nenašiel.");
+      return code;
+    });
+  }
+  function forgetBiometricLogin() {
+    try { localStorage.removeItem(BIO_CRED_KEY); localStorage.removeItem(BIO_CODE_KEY); } catch (e) { /* ignore */ }
+  }
+
   // ---------- transient UI state ----------
   var ui = {
     code: (function () { try { return sessionStorage.getItem(LOGIN_KEY) || null; } catch (e) { return null; } })(),
     loginInputVal: "",
     loginError: "",
+    bioAvailable: false,
+    bioBusy: false,
+    showBioOffer: false,
     tab: "trainings",
     selectedTrainingId: null,
     selectedMemberId: null,
@@ -394,6 +459,7 @@ import {
     ui.code = ui.loginInputVal.trim();
     ui.loginError = "";
     try { sessionStorage.setItem(LOGIN_KEY, ui.code); } catch (e) { /* ignore */ }
+    if (ui.bioAvailable && !hasBiometricLogin()) ui.showBioOffer = true;
     render();
   }
   function logout() {
@@ -588,6 +654,8 @@ import {
     html += '<a href="#" data-action="logout" class="small logout-link">Odhl\u00e1si\u0165</a>';
     html += "</div>";
 
+    if (ui.showBioOffer) html += renderBioOffer();
+
     if (ui.selectedTrainingId) return html + renderTrainingDetail();
     if (ui.selectedMemberId) return html + renderMemberProfile();
     if (ui.selectedDayIso) return html + renderDayDetail();
@@ -607,15 +675,36 @@ import {
     return html;
   }
 
+  function renderBioOffer() {
+    var html = '<div class="card bio-offer">';
+    html += '<div class="row align-start" style="gap:10px">';
+    html += svgIcon("faceid", "icon bio-offer-icon");
+    html += '<div style="flex:1"><div style="font-weight:600;margin-bottom:2px">Pou\u017ei\u0165 Face ID / odtla\u010dok?</div>' +
+      '<div class="small">Nabudúce sa prihlásiš bez písania kódu. Kód sa uloží iba v tomto telefóne.</div></div>';
+    html += "</div>";
+    html += '<div style="display:flex;gap:8px;margin-top:10px">';
+    html += '<button class="btn-primary" data-action="setup-bio" style="flex:1;justify-content:center">Nastavi\u0165</button>';
+    html += '<button class="btn" data-action="dismiss-bio-offer" style="flex:1;justify-content:center">Nie, v\u010faka</button>';
+    html += "</div></div>";
+    return html;
+  }
+
   function renderLogin() {
+    var bioReady = ui.bioAvailable && hasBiometricLogin();
     var html = '<div class="login-screen"><div class="card login-card">';
     html += '<img class="login-logo" src="icon-192.png" alt="" />';
     html += '<div class="login-title">Zadaj sv\u00f4j 6-miestny k\u00f3d</div>';
     html += '<div class="small login-hint">K\u00f3d si zvol\u00ed\u0161 s\u00e1m. Po zatvoren\u00ed appky bude\u0161 musie\u0165 k\u00f3d zada\u0165 znova.</div>';
+    if (bioReady) {
+      html += '<button class="btn-primary login-btn bio-btn" data-action="bio-login"' + (ui.bioBusy ? " disabled" : "") + '>' +
+        svgIcon("faceid") + (ui.bioBusy ? " Over\u0165 sa\u2026" : " Face ID / odtla\u010dok") + "</button>";
+      html += '<div class="login-divider"><span>alebo k\u00f3dom</span></div>';
+    }
     html += '<input type="tel" inputmode="numeric" maxlength="6" id="input-login-code" class="login-code-input" placeholder="\u2022\u2022\u2022\u2022\u2022\u2022" ' +
       'value="' + esc(ui.loginInputVal) + '" />';
     if (ui.loginError) html += '<div class="error" style="display:block;margin-bottom:10px">' + esc(ui.loginError) + "</div>";
     html += '<button class="btn-primary login-btn" data-action="login">Vst\u00fapi\u0165</button>';
+    if (bioReady) html += '<a href="#" class="small bio-forget-link" data-action="forget-bio">Zabudn\u00fa\u0165 Face ID / odtla\u010dok na tomto telef\u00f3ne</a>';
     html += "</div></div>";
     return html;
   }
@@ -1066,6 +1155,30 @@ import {
       case "login": login(); break;
       case "export-backup": exportBackup(); break;
       case "logout": logout(); break;
+      case "bio-login":
+        if (ui.bioBusy) break;
+        ui.bioBusy = true; ui.loginError = ""; render();
+        biometricLogin().then(function (code) {
+          ui.code = code; ui.bioBusy = false;
+          try { sessionStorage.setItem(LOGIN_KEY, code); } catch (err) { /* ignore */ }
+          render();
+        }).catch(function (err) {
+          ui.bioBusy = false;
+          ui.loginError = "Face ID / odtlačok zlyhal (" + err.message + "). Skús to znova alebo zadaj kód.";
+          render();
+        });
+        break;
+      case "setup-bio":
+        setupBiometricLogin(ui.code).then(function () {
+          ui.showBioOffer = false; render();
+        }).catch(function (err) {
+          ui.showBioOffer = false;
+          ui.error = "Nepodarilo sa nastaviť Face ID / odtlačok: " + err.message;
+          render();
+        });
+        break;
+      case "dismiss-bio-offer": ui.showBioOffer = false; render(); break;
+      case "forget-bio": forgetBiometricLogin(); render(); break;
       case "toggle-theme":
         ui.theme = ui.theme === "dark" ? "light" : "dark";
         try { localStorage.setItem(THEME_KEY, ui.theme); } catch (e) { /* ignore */ }
@@ -1138,6 +1251,12 @@ import {
     initFirebase();
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("service-worker.js").catch(function () {});
+    }
+    if (biometricSupported() && window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable) {
+      PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable().then(function (available) {
+        ui.bioAvailable = available;
+        if (available) render();
+      }).catch(function () { /* ignore - treat as unavailable */ });
     }
   });
 })();
