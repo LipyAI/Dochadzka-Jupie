@@ -1,11 +1,11 @@
-var CACHE_NAME = "dochadzka-cache-v2";
+var CACHE_NAME = "dochadzka-cache-v3";
 var URLS_TO_CACHE = [
   "./",
   "./index.html",
   "./style.css",
   "./manifest.json",
-  "./icons/icon-192.png",
-  "./icons/icon-512.png",
+  "./icon-192.png",
+  "./icon-512.png",
 ];
 
 self.addEventListener("install", function (event) {
@@ -29,9 +29,17 @@ self.addEventListener("activate", function (event) {
 });
 
 self.addEventListener("fetch", function (event) {
+  // Network-first: always prefer the latest deployed version when online,
+  // only falling back to the cached copy when offline (e.g. slabý signál
+  // na ihrisku). This also keeps the cache self-healing, so a future deploy
+  // shows up immediately without needing a manual CACHE_NAME bump here.
   event.respondWith(
-    caches.match(event.request).then(function (cached) {
-      return cached || fetch(event.request);
-    })
+    fetch(event.request)
+      .then(function (response) {
+        var copy = response.clone();
+        caches.open(CACHE_NAME).then(function (cache) { cache.put(event.request, copy); });
+        return response;
+      })
+      .catch(function () { return caches.match(event.request); })
   );
 });
