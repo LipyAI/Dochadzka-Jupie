@@ -18,20 +18,37 @@ Beží ako webová appka (PWA) na GitHub Pages, dáta ukladá do Firebase Firest
 
 ## Databáza (Firestore)
 
-Od verzie 1.5.0 appka používa štyri kolekcie:
+Od verzie 1.5.0 appka používa tieto kolekcie:
 - `members` — hráči
 - `trainings` — tréningy, zápasy, turnaje
 - `attendance` — dochádzka (jeden záznam = jeden hráč pri jednej udalosti)
 - `activityLog` — kto čo zmenil (viditeľné iba adminovi v appke)
+- `accounts` — prihlasovacie účty (od verzie 1.11.0, pozri nižšie)
 
 Staršia štruktúra (`dochadzka/shared`, všetko v jednom dokumente) sa už
 nepoužíva, ale nechala sa nedotknutá ako záložná kópia.
 
 **Bezpečnosť:** Firestore pravidlá momentálne povoľujú čítanie aj zápis
 komukoľvek, kto pozná presnú adresu appky (`allow read, write: if true`).
-Appka nemá skutočné prihlasovacie účty, iba 4/6-miestne kódy, ktoré si
-každý zvolí sám. Toto je vedomý kompromis pre jednoduchosť — vhodné pre
+Appka nemá skutočný autentifikačný server — prihlasovacie meno a heslo
+(pozri nižšie) sú len organizačné, nie kryptograficky vynútené. Heslá sa
+ukladajú hashované (PBKDF2, nie čitateľné priamo), ale keďže pravidlá
+umožňujú komukoľvek so znalosťou adresy appky prečítať aj kolekciu
+`accounts`, ide stále o vedomý kompromis pre jednoduchosť — vhodné pre
 uzavretý okruh ľudí, ktorí si link nešíria ďalej.
+
+### Prihlasovanie menom a heslom (od verzie 1.11.0)
+
+- Prihlasovacie meno vzniká automaticky z mena a priezviska (bez diakritiky):
+  prvé 3 písmená mena + prvé 3 písmená priezviska, napr. Ľuboš Lipták → `LubLip`.
+  Ak sa meno zhoduje s už existujúcim účtom, treba to riešiť ručne v konzole
+  (zmazať/premenovať starší dokument v kolekcii `accounts`).
+- Heslo si každý volí sám, minimálne 8 znakov, aspoň jedno veľké písmeno,
+  jedno malé písmeno a jednu číslicu.
+- Jediný admin účet je pevne dané prihlasovacie meno v `app.js`
+  (`ADMIN_USERNAME`) — kto sa prihlási pod týmto menom, má admin práva.
+- Voliteľne sa dá appka odomykať aj cez Face ID / odtlačok (WebAuthn) —
+  ide o pohodlie na danom telefóne, nie o ďalší spôsob overenia identity.
 
 ## Ako appku upraviť a nasadiť
 
@@ -61,7 +78,14 @@ service cloud.firestore {
     match /trainings/{id} { allow read, write: if true; }
     match /attendance/{id} { allow read, write: if true; }
     match /activityLog/{id} { allow read, write: if true; }
+    match /accounts/{id} { allow read, write: if true; }
     match /meta/{id} { allow read, write: if true; }
   }
 }
 ```
+
+**Dôležité:** riadok `match /accounts/{id}` treba do pravidiel pridať
+ručne vo Firebase Console (Firestore Database → Rules) predtým, než sa
+appka verzie 1.11.0 nasadí — inak prihlasovanie/registrácia zlyhá s
+chybou "Missing or insufficient permissions", pretože Firestore bez
+zodpovedajúceho pravidla novú kolekciu automaticky odmieta.

@@ -4,6 +4,20 @@ Pri každej väčšej úprave appky sa sem pridá nový riadok s číslom verzie
 (rovnaké číslo, aké appka zobrazuje pod nadpisom, aby sa dalo overiť,
 či je nasadená naozaj tá najnovšia).
 
+## 1.11.0
+- Prihlasovanie prerobené z voľne zvolených 6-miestnych kódov na skutočné
+  účty: prihlasovacie meno vzniká automaticky z mena a priezviska (prvé
+  3 písmená z každého, bez diakritiky, napr. Ľuboš Lipták → LubLip),
+  heslo si každý volí sám (min. 8 znakov, veľké aj malé písmeno, číslica).
+  Heslá sa ukladajú hashované (PBKDF2), nie ako čitateľný text.
+  **Vyžaduje ručnú úpravu Firestore pravidiel, pozri README.**
+- Admin účet je teraz pevne dané prihlasovacie meno namiesto starého
+  číselného kódu.
+- Face ID / odtlačok teraz odomyká meno aj heslo (predtým iba kód) a pri
+  každom použití sa heslo znova overí voči účtu.
+- Staré číselné kódy prestávajú platiť - všetci sa musia znova
+  zaregistrovať pod svojím menom.
+
 ## 1.10.0
 - Prihlásenie cez Face ID / odtlačok prsta (WebAuthn) ako pohodlnejšia
   alternatíva k písaniu 6-miestneho kódu. Po prvom prihlásení kódom appka
