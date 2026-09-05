@@ -7,7 +7,7 @@ import {
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.8.1";
+  var APP_VERSION = "1.9.0";
   var ADMIN_CODE = "293919";
   var LOGIN_KEY = "dochadzka-login-code";
   var THEME_KEY = "dochadzka-theme";
@@ -103,6 +103,31 @@ import {
     return String(str == null ? "" : str).replace(/[&<>"']/g, function (c) {
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
     });
+  }
+  var ICON_PATHS = {
+    calendar: '<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M16 2v4M8 2v4M3 9h18"/>',
+    users: '<circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.7-3 3-4.6 5.5-4.6s4.8 1.6 5.5 4.6"/><circle cx="17.5" cy="9.5" r="2.6"/><path d="M15.6 14.8c2.1.4 3.7 1.8 4.3 4.2"/>',
+    chart: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
+    clipboard: '<rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1M9 11h6M9 15h6"/>',
+    sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+    moon: '<path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/>',
+    plus: '<path d="M12 5v14M5 12h14"/>',
+    trash: '<path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13M10 11v6M14 11v6"/>',
+    pencil: '<path d="M4 20l.9-3.6L16 5.3a1.5 1.5 0 0 1 2.1 0l.6.6a1.5 1.5 0 0 1 0 2.1L7.6 19.1 4 20z"/>',
+    "arrow-left": '<path d="M19 12H5M11 6l-6 6 6 6"/>',
+    "arrow-right": '<path d="M5 12h14M13 6l6 6-6 6"/>',
+    repeat: '<path d="M17 2l4 4-4 4M21 6H8a4 4 0 0 0-4 4M7 22l-4-4 4-4M3 18h13a4 4 0 0 0 4-4"/>',
+    check: '<path d="M20 6L9 17l-5-5"/>',
+    x: '<path d="M18 6L6 18M6 6l12 12"/>',
+    download: '<path d="M12 3v12M7 10l5 5 5-5M4 21h16"/>',
+    inbox: '<path d="M4 12h4l2 3h4l2-3h4"/><path d="M5.5 5h13l2.5 7v7a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-7z"/>'
+  };
+  function svgIcon(name, cls) {
+    return '<svg class="' + (cls || "icon") + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+      'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (ICON_PATHS[name] || "") + "</svg>";
+  }
+  function emptyState(text) {
+    return '<div class="empty">' + svgIcon("inbox", "icon empty-icon") + '<div>' + text + "</div></div>";
   }
   function buildCalendarDays(year, month) {
     var firstOfMonth = new Date(year, month, 1);
@@ -546,7 +571,7 @@ import {
     html += '<div class="header"><h1>Dochádzka na tréningu</h1>';
     html += '<div class="header-actions">';
     html += '<span id="saving-indicator" class="saving" style="display:' + (ui.saving ? "inline-flex" : "none") + '">Ukladám\u2026</span>';
-    html += '<button class="icon-btn" data-action="toggle-theme" aria-label="Prepn\u00fa\u0165 tmav\u00fd re\u017eim">' + (ui.theme === "dark" ? "\u2600\ufe0f" : "\ud83c\udf19") + "</button>";
+    html += '<button class="icon-btn" data-action="toggle-theme" aria-label="Prepn\u00fa\u0165 tmav\u00fd re\u017eim">' + svgIcon(ui.theme === "dark" ? "sun" : "moon") + "</button>";
     html += "</div></div>";
     html += '<div class="version-tag">verzia ' + APP_VERSION + "</div>";
     html += '<div id="error-indicator" class="error" style="display:' + (ui.error ? "block" : "none") + '">' + esc(ui.error) + "</div>";
@@ -568,10 +593,10 @@ import {
     if (ui.selectedDayIso) return html + renderDayDetail();
 
     html += '<div class="tabs">';
-    html += tabButton("trainings", "\uD83D\uDCC5", "Tréningy");
-    html += tabButton("members", "\uD83D\uDC65", "Členovia");
-    html += tabButton("stats", "\uD83D\uDCCA", "Štatistiky");
-    if (isAdmin()) html += tabButton("activity", "\uD83D\uDCCB", "Aktivita");
+    html += tabButton("trainings", "calendar", "Tréningy");
+    html += tabButton("members", "users", "Členovia");
+    html += tabButton("stats", "chart", "Štatistiky");
+    if (isAdmin()) html += tabButton("activity", "clipboard", "Aktivita");
     html += "</div>";
 
     if (ui.tab === "trainings") html += renderTrainingsTab();
@@ -595,9 +620,9 @@ import {
     return html;
   }
 
-  function tabButton(key, icon, label) {
+  function tabButton(key, iconName, label) {
     return '<button class="tab-btn' + (ui.tab === key ? " active" : "") + '" data-action="tab" data-tab="' + key + '">' +
-      '<span class="tab-icon">' + icon + "</span>" + esc(label) + "</button>";
+      '<span class="tab-icon">' + svgIcon(iconName) + "</span>" + esc(label) + "</button>";
   }
 
   function renderOverviewCalendar() {
@@ -608,9 +633,9 @@ import {
 
     var html = '<div class="card">';
     html += '<div class="row" style="margin-bottom:10px">';
-    html += '<button class="icon-btn" data-action="shift-main-month" data-delta="-1">\u2b05\ufe0f</button>';
+    html += '<button class="icon-btn" data-action="shift-main-month" data-delta="-1">' + svgIcon("arrow-left") + '</button>';
     html += '<div style="font-weight:600;font-size:14px">' + MONTHS_SK[month] + " " + year + "</div>";
-    html += '<button class="icon-btn" data-action="shift-main-month" data-delta="1">\u27a1\ufe0f</button>';
+    html += '<button class="icon-btn" data-action="shift-main-month" data-delta="1">' + svgIcon("arrow-right") + '</button>';
     html += "</div>";
 
     html += '<div class="calendar-grid" style="margin-bottom:4px">';
@@ -639,14 +664,14 @@ import {
   function renderDayDetail() {
     var iso = ui.selectedDayIso;
     var events = eventsOnDate(iso);
-    var html = '<button class="btn" style="margin-bottom:12px" data-action="back-day">\u2b05\ufe0f Späť</button>';
+    var html = '<button class="btn" style="margin-bottom:12px" data-action="back-day">' + svgIcon("arrow-left") + ' Späť</button>';
     html += '<div style="font-weight:600;font-size:16px;margin-bottom:12px">' + esc(formatDate(iso)) + "</div>";
 
     if (events.length === 0) {
-      html += '<div class="empty">V tento deň nie je žiadna udalosť.</div>';
+      html += emptyState("V tento deň nie je žiadna udalosť.");
       html += '<div class="card row">';
       html += '<span class="small">Chce\u0161 sem prida\u0165 udalos\u0165?</span>';
-      html += '<button class="btn-primary" data-action="add-on-day" data-iso="' + iso + '">\u2795 Prida\u0165</button>';
+      html += '<button class="btn-primary" data-action="add-on-day" data-iso="' + iso + '">' + svgIcon("plus") + ' Prida\u0165</button>';
       html += "</div>";
       return html;
     }
@@ -702,11 +727,11 @@ import {
 
     html += '<div class="row">';
     html += '<input type="text" id="input-new-note" placeholder="Poznámka (nepovinné)" value="' + esc(ui.newTrainingNote) + '" />';
-    html += '<button class="btn-primary" data-action="add-training">\u2795 Pridať</button>';
+    html += '<button class="btn-primary" data-action="add-training">' + svgIcon("plus") + ' Pridať</button>';
     html += "</div></div>";
 
     if (data.trainings.length === 0) {
-      html += '<div class="empty">Zatiaľ žiadne udalosti. Pridaj prvú vyššie.</div>';
+      html += emptyState("Zatiaľ žiadne udalosti. Pridaj prvú vyššie.");
       return html;
     }
 
@@ -736,7 +761,7 @@ import {
         if (t.note) html += '<div class="small">' + esc(t.note) + "</div>";
         html += '<div class="small">' + presentCount + " / " + data.members.length + " " + presentWord(t) + "</div>";
         html += "</div>";
-        if (isAdmin()) html += '<button class="icon-btn" data-action="remove-training" data-id="' + t.id + '">\uD83D\uDDD1\uFE0F</button>';
+        if (isAdmin()) html += '<button class="icon-btn" data-action="remove-training" data-id="' + t.id + '">' + svgIcon("trash") + '</button>';
         html += "</div></div>";
       });
     });
@@ -751,10 +776,10 @@ import {
     var def = eventType(t);
 
     var html = '<div class="row" style="margin-bottom:12px">';
-    html += '<button class="btn" data-action="back-training">\u2b05\ufe0f Späť</button>';
+    html += '<button class="btn" data-action="back-training">' + svgIcon("arrow-left") + ' Späť</button>';
     html += '<div style="display:flex;gap:8px">';
-    html += '<button class="btn" data-action="duplicate-training" data-id="' + t.id + '">\ud83d\udd01 O t\u00fd\u017ede\u0148</button>';
-    if (isAdmin() && !ui.isEditingTraining) html += '<button class="btn" data-action="edit-training" data-id="' + t.id + '">\u270f\ufe0f Upravi\u0165</button>';
+    html += '<button class="btn" data-action="duplicate-training" data-id="' + t.id + '">' + svgIcon("repeat") + ' O t\u00fd\u017ede\u0148</button>';
+    if (isAdmin() && !ui.isEditingTraining) html += '<button class="btn" data-action="edit-training" data-id="' + t.id + '">' + svgIcon("pencil") + ' Upravi\u0165</button>';
     html += "</div></div>";
 
     if (ui.isEditingTraining) {
@@ -797,13 +822,13 @@ import {
     html += "</div>";
 
     if (data.members.length === 0) {
-      html += '<div class="empty">Najprv pridaj členov v záložke „Členovia".</div>';
+      html += emptyState('Najprv pridaj členov v záložke „Členovia".');
       return html;
     }
 
     html += '<div class="row" style="gap:8px;margin-bottom:10px">';
-    html += '<button class="btn" data-action="mark-all" data-id="' + t.id + '" data-value="true">\u2705 Označiť všetkých</button>';
-    html += '<button class="btn" data-action="mark-all" data-id="' + t.id + '" data-value="false">\u274c Zrušiť všetkých</button>';
+    html += '<button class="btn" data-action="mark-all" data-id="' + t.id + '" data-value="true">' + svgIcon("check") + ' Označiť všetkých</button>';
+    html += '<button class="btn" data-action="mark-all" data-id="' + t.id + '" data-value="false">' + svgIcon("x") + ' Zrušiť všetkých</button>';
     html += "</div>";
 
     sortedMembers().forEach(function (m) {
@@ -812,8 +837,8 @@ import {
       html += '<div class="card row">';
       html += "<span>" + esc(m.name) + "</span>";
       html += '<div style="display:flex;gap:6px">';
-      html += '<button class="att-btn present' + (present ? " active" : "") + '" data-action="set-att" data-training="' + t.id + '" data-member="' + m.id + '" data-value="true">\u2713</button>';
-      html += '<button class="att-btn absent' + (absent ? " active" : "") + '" data-action="set-att" data-training="' + t.id + '" data-member="' + m.id + '" data-value="false">\u2715</button>';
+      html += '<button class="att-btn present' + (present ? " active" : "") + '" data-action="set-att" data-training="' + t.id + '" data-member="' + m.id + '" data-value="true">' + svgIcon("check", "icon icon-att") + '</button>';
+      html += '<button class="att-btn absent' + (absent ? " active" : "") + '" data-action="set-att" data-training="' + t.id + '" data-member="' + m.id + '" data-value="false">' + svgIcon("x", "icon icon-att") + '</button>';
       html += "</div></div>";
     });
     return html;
@@ -822,12 +847,12 @@ import {
   function renderMembersTab() {
     var html = '<div class="card row">';
     html += '<input type="text" id="input-new-member" placeholder="Meno člena" value="' + esc(ui.newMemberName) + '" />';
-    html += '<button class="btn-primary" data-action="add-member">\u2795 Pridať</button>';
+    html += '<button class="btn-primary" data-action="add-member">' + svgIcon("plus") + ' Pridať</button>';
     html += "</div>";
 
     var members = sortedMembers();
     if (members.length === 0) {
-      html += '<div class="empty">Zatiaľ žiadni členovia. Pridaj prvého vyššie.</div>';
+      html += emptyState("Zatiaľ žiadni členovia. Pridaj prvého vyššie.");
       return html;
     }
     members.forEach(function (m) {
@@ -838,7 +863,7 @@ import {
       html += "<div><div>" + esc(m.name) + "</div>";
       if (s.total > 0) html += '<div class="small">' + s.pct + "% účasť</div>";
       html += "</div></div>";
-      if (isAdmin()) html += '<button class="icon-btn" data-action="remove-member" data-id="' + m.id + '" data-stop="1">\uD83D\uDDD1\uFE0F</button>';
+      if (isAdmin()) html += '<button class="icon-btn" data-action="remove-member" data-id="' + m.id + '" data-stop="1">' + svgIcon("trash") + '</button>';
       html += "</div>";
     });
     return html;
@@ -846,7 +871,7 @@ import {
 
   function renderStatsTab() {
     if (data.members.length === 0 || statsEligibleEvents().length === 0) {
-      return '<div class="empty">Pridaj členov aj tréningy, aby sa mohli zobraziť štatistiky dochádzky. (Zápasy a turnaje sa do štatistiky nepočítajú.)</div>';
+      return emptyState("Pridaj členov aj tréningy, aby sa mohli zobraziť štatistiky dochádzky. (Zápasy a turnaje sa do štatistiky nepočítajú.)");
     }
     var rows = sortedMembers().map(function (m) { return { m: m, s: memberStats(m.id) }; });
     rows.sort(function (a, b) { return b.s.pct - a.s.pct; });
@@ -867,11 +892,11 @@ import {
   function renderActivityTab() {
     var html = '<div class="card row">';
     html += '<div><div style="font-weight:600">Záloha dát</div><div class="small">Stiahne aktu\u00e1lny stav (\u010dlenovia, udalosti, doch\u00e1dzka, denn\u00edk) ako s\u00fabor.</div></div>';
-    html += '<button class="btn-primary" data-action="export-backup">\u2b07\ufe0f St\u00edahnu\u0165</button>';
+    html += '<button class="btn-primary" data-action="export-backup">' + svgIcon("download") + ' St\u00edahnu\u0165</button>';
     html += "</div>";
 
     var log = (data.log || []).slice().sort(function (a, b) { return b.ts - a.ts; });
-    if (log.length === 0) return html + '<div class="empty">Zatiaľ žiadna aktivita.</div>';
+    if (log.length === 0) return html + emptyState("Zatiaľ žiadna aktivita.");
     log.forEach(function (entry) {
       var label = ACTION_LABELS[entry.action] || entry.action;
       html += '<div class="card">';
@@ -934,7 +959,7 @@ import {
       }
     });
 
-    var html = '<button class="btn" style="margin-bottom:12px" data-action="back-member">\u2b05\ufe0f Späť</button>';
+    var html = '<button class="btn" style="margin-bottom:12px" data-action="back-member">' + svgIcon("arrow-left") + ' Späť</button>';
 
     if (!ui.isEditingMember) {
       html += '<div class="row align-start" style="margin-bottom:14px">';
@@ -943,7 +968,7 @@ import {
       html += "<div><div style=\"font-weight:700;font-size:17px\">" + esc(m.name) + "</div>";
       html += '<div class="small">' + s.present + " / " + s.total + " tréningov \u00b7 " + s.pct + "% účasť</div></div>";
       html += "</div>";
-      if (isAdmin()) html += '<button class="icon-btn" data-action="edit-member">\u270f\ufe0f</button>';
+      if (isAdmin()) html += '<button class="icon-btn" data-action="edit-member">' + svgIcon("pencil") + '</button>';
       html += "</div>";
     } else {
       html += '<div class="card" style="margin-bottom:14px;display:flex;flex-direction:column;gap:8px">';
@@ -957,9 +982,9 @@ import {
 
     html += '<div class="card">';
     html += '<div class="row" style="margin-bottom:10px">';
-    html += '<button class="icon-btn" data-action="shift-month" data-delta="-1">\u2b05\ufe0f</button>';
+    html += '<button class="icon-btn" data-action="shift-month" data-delta="-1">' + svgIcon("arrow-left") + '</button>';
     html += '<div style="font-weight:600;font-size:14px">' + MONTHS_SK[month] + " " + year + "</div>";
-    html += '<button class="icon-btn" data-action="shift-month" data-delta="1">\u27a1\ufe0f</button>';
+    html += '<button class="icon-btn" data-action="shift-month" data-delta="1">' + svgIcon("arrow-right") + '</button>';
     html += "</div>";
 
     html += '<div class="calendar-grid" style="margin-bottom:4px">';
