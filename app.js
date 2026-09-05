@@ -7,7 +7,7 @@ import {
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.7.0";
+  var APP_VERSION = "1.8.0";
   var ADMIN_CODE = "293919";
   var LOGIN_KEY = "dochadzka-login-code";
   var THEME_KEY = "dochadzka-theme";
@@ -86,6 +86,19 @@ import {
     return isoDate(d);
   }
   function eventType(t) { return EVENT_TYPES[t.type] || EVENT_TYPES.trening; }
+  var AVATAR_COLORS = ["#D85A30", "#378ADD", "#7F77DD", "#3C9D6B", "#C9972B", "#B8481F", "#5B8DD9", "#9C6ADE"];
+  function avatarColor(id) {
+    var hash = 0;
+    var s = String(id || "");
+    for (var i = 0; i < s.length; i++) hash = (hash * 31 + s.charCodeAt(i)) >>> 0;
+    return AVATAR_COLORS[hash % AVATAR_COLORS.length];
+  }
+  function initials(name) {
+    var parts = String(name || "").trim().split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return "?";
+    var chars = parts.slice(0, 2).map(function (p) { return p.charAt(0).toUpperCase(); });
+    return chars.join("");
+  }
   function esc(str) {
     return String(str == null ? "" : str).replace(/[&<>"']/g, function (c) {
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
@@ -524,30 +537,30 @@ import {
   function renderTopStatusOnly() {
     var s = appEl.querySelector("#saving-indicator");
     var e = appEl.querySelector("#error-indicator");
-    if (s) s.style.display = ui.saving ? "inline" : "none";
+    if (s) s.style.display = ui.saving ? "inline-flex" : "none";
     if (e) { e.style.display = ui.error ? "block" : "none"; e.textContent = ui.error; }
   }
 
   function renderApp() {
     var html = "";
     html += '<div class="header"><h1>Dochádzka na tréningu</h1>';
-    html += '<div style="display:flex;align-items:center;gap:6px">';
-    html += '<span id="saving-indicator" class="saving" style="display:' + (ui.saving ? "inline" : "none") + '">Ukladám\u2026</span>';
+    html += '<div class="header-actions">';
+    html += '<span id="saving-indicator" class="saving" style="display:' + (ui.saving ? "inline-flex" : "none") + '">Ukladám\u2026</span>';
     html += '<button class="icon-btn" data-action="toggle-theme" aria-label="Prepn\u00fa\u0165 tmav\u00fd re\u017eim">' + (ui.theme === "dark" ? "\u2600\ufe0f" : "\ud83c\udf19") + "</button>";
     html += "</div></div>";
-    html += '<div class="small" style="margin-top:-8px;margin-bottom:8px">verzia ' + APP_VERSION + "</div>";
+    html += '<div class="version-tag">verzia ' + APP_VERSION + "</div>";
     html += '<div id="error-indicator" class="error" style="display:' + (ui.error ? "block" : "none") + '">' + esc(ui.error) + "</div>";
 
     if (!ui.code) return html + renderLogin();
 
     if (!ui.dataLoaded) {
-      html += '<div style="padding:24px;text-align:center;color:#888">Pripájam sa k databáze\u2026</div>';
+      html += '<div class="loading-state"><div class="spinner"></div><div>Pripájam sa k databáze\u2026</div></div>';
       return html;
     }
 
-    html += '<div class="row" style="margin-bottom:10px">';
-    html += '<span class="small">Prihl\u00e1sen\u00fd k\u00f3d: ' + esc(ui.code) + (isAdmin() ? " (admin)" : "") + '</span>';
-    html += '<a href="#" data-action="logout" class="small" style="color:#d85a30">Odhl\u00e1si\u0165</a>';
+    html += '<div class="row session-row">';
+    html += '<span class="small">K\u00f3d: ' + esc(ui.code) + (isAdmin() ? ' <span class="admin-pill">Admin</span>' : "") + '</span>';
+    html += '<a href="#" data-action="logout" class="small logout-link">Odhl\u00e1si\u0165</a>';
     html += "</div>";
 
     if (ui.selectedTrainingId) return html + renderTrainingDetail();
@@ -570,14 +583,15 @@ import {
   }
 
   function renderLogin() {
-    var html = '<div class="card" style="text-align:center;padding:26px 16px">';
-    html += '<div style="font-weight:600;font-size:16px;margin-bottom:6px">Zadaj sv\u00f4j 6-miestny k\u00f3d</div>';
-    html += '<div class="small" style="margin-bottom:16px">K\u00f3d si zvol\u00ed\u0161 s\u00e1m. Po zatvoren\u00ed appky bude\u0161 musie\u0165 k\u00f3d zada\u0165 znova.</div>';
-    html += '<input type="tel" inputmode="numeric" maxlength="6" id="input-login-code" placeholder="\u2022\u2022\u2022\u2022\u2022\u2022" ' +
-      'style="text-align:center;font-size:22px;letter-spacing:7px;width:190px;margin:0 auto 12px;display:block;border:1px solid #ddd;border-radius:8px;padding:9px 0" value="' + esc(ui.loginInputVal) + '" />';
+    var html = '<div class="login-screen"><div class="card login-card">';
+    html += '<img class="login-logo" src="icon-192.png" alt="" />';
+    html += '<div class="login-title">Zadaj sv\u00f4j 6-miestny k\u00f3d</div>';
+    html += '<div class="small login-hint">K\u00f3d si zvol\u00ed\u0161 s\u00e1m. Po zatvoren\u00ed appky bude\u0161 musie\u0165 k\u00f3d zada\u0165 znova.</div>';
+    html += '<input type="tel" inputmode="numeric" maxlength="6" id="input-login-code" class="login-code-input" placeholder="\u2022\u2022\u2022\u2022\u2022\u2022" ' +
+      'value="' + esc(ui.loginInputVal) + '" />';
     if (ui.loginError) html += '<div class="error" style="display:block;margin-bottom:10px">' + esc(ui.loginError) + "</div>";
-    html += '<button class="btn-primary" data-action="login">Vst\u00fapi\u0165</button>';
-    html += "</div>";
+    html += '<button class="btn-primary login-btn" data-action="login">Vst\u00fapi\u0165</button>';
+    html += "</div></div>";
     return html;
   }
 
@@ -590,6 +604,7 @@ import {
     var year = ui.mainCalYear, month = ui.mainCalMonth;
     var cells = buildCalendarDays(year, month);
     var typesByDate = eventTypesByDate();
+    var today = todayISO();
 
     var html = '<div class="card">';
     html += '<div class="row" style="margin-bottom:10px">';
@@ -606,7 +621,7 @@ import {
     cells.forEach(function (cell) {
       if (!cell) { html += "<div></div>"; return; }
       var types = typesByDate[cell.iso];
-      html += '<div class="mini-cal-cell clickable" data-action="open-day" data-iso="' + cell.iso + '">';
+      html += '<div class="mini-cal-cell clickable' + (cell.iso === today ? " today" : "") + '" data-action="open-day" data-iso="' + cell.iso + '">';
       html += '<span class="mini-cal-day">' + cell.day + "</span>";
       if (types) {
         html += '<span class="mini-cal-dots">';
@@ -818,9 +833,11 @@ import {
     members.forEach(function (m) {
       var s = memberStats(m.id);
       html += '<div class="card row" style="cursor:pointer" data-action="open-member" data-id="' + m.id + '">';
+      html += '<div class="avatar-row">';
+      html += '<span class="avatar" style="background:' + avatarColor(m.id) + '">' + esc(initials(m.name)) + '</span>';
       html += "<div><div>" + esc(m.name) + "</div>";
       if (s.total > 0) html += '<div class="small">' + s.pct + "% účasť</div>";
-      html += "</div>";
+      html += "</div></div>";
       if (isAdmin()) html += '<button class="icon-btn" data-action="remove-member" data-id="' + m.id + '" data-stop="1">\uD83D\uDDD1\uFE0F</button>';
       html += "</div>";
     });
@@ -836,9 +853,13 @@ import {
     var html = "";
     rows.forEach(function (r) {
       html += '<div class="card">';
-      html += '<div class="row" style="margin-bottom:6px"><span>' + esc(r.m.name) + '</span><span style="font-weight:600">' + r.s.pct + "%</span></div>";
+      html += '<div class="row" style="margin-bottom:8px">';
+      html += '<div class="avatar-row">';
+      html += '<span class="avatar" style="width:28px;height:28px;font-size:11px;background:' + avatarColor(r.m.id) + '">' + esc(initials(r.m.name)) + '</span>';
+      html += '<span>' + esc(r.m.name) + '</span></div>';
+      html += '<span style="font-weight:700">' + r.s.pct + "%</span></div>";
       html += '<div class="progress-bar"><div class="progress-fill" style="width:' + r.s.pct + '%"></div></div>';
-      html += '<div class="small">' + r.s.present + " / " + r.s.total + " tréningov</div></div>";
+      html += '<div class="small" style="margin-top:6px">' + r.s.present + " / " + r.s.total + " tréningov</div></div>";
     });
     return html;
   }
@@ -854,9 +875,13 @@ import {
     log.forEach(function (entry) {
       var label = ACTION_LABELS[entry.action] || entry.action;
       html += '<div class="card">';
+      html += '<div class="activity-item">';
+      html += '<span class="activity-dot"></span>';
+      html += '<div style="flex:1">';
       html += '<div class="row"><span><strong>' + esc(entry.code) + "</strong> " + esc(label) + "</span>";
       html += '<span class="small">' + formatDateTime(entry.ts) + "</span></div>";
       if (entry.detail) html += '<div class="small">' + esc(entry.detail) + "</div>";
+      html += "</div></div>";
       html += "</div>";
     });
     return html;
@@ -913,8 +938,11 @@ import {
 
     if (!ui.isEditingMember) {
       html += '<div class="row align-start" style="margin-bottom:14px">';
-      html += "<div><div style=\"font-weight:600;font-size:16px\">" + esc(m.name) + "</div>";
+      html += '<div class="avatar-row">';
+      html += '<span class="avatar avatar-lg" style="background:' + avatarColor(m.id) + '">' + esc(initials(m.name)) + '</span>';
+      html += "<div><div style=\"font-weight:700;font-size:17px\">" + esc(m.name) + "</div>";
       html += '<div class="small">' + s.present + " / " + s.total + " tréningov \u00b7 " + s.pct + "% účasť</div></div>";
+      html += "</div>";
       if (isAdmin()) html += '<button class="icon-btn" data-action="edit-member">\u270f\ufe0f</button>';
       html += "</div>";
     } else {
@@ -938,11 +966,13 @@ import {
     WEEKDAYS_SK.forEach(function (w) { html += '<div class="weekday-label">' + w + "</div>"; });
     html += "</div>";
 
+    var todayIsoM = todayISO();
     html += '<div class="calendar-grid">';
     cells.forEach(function (cell) {
       if (!cell) { html += "<div></div>"; return; }
       var t = trainingByDate[cell.iso];
       var cls = "cal-cell";
+      if (cell.iso === todayIsoM) cls += " today";
       if (t) {
         var mark = data.attendance[t.id] ? data.attendance[t.id][m.id] : undefined;
         if (mark === true) cls += " present";
