@@ -4,6 +4,14 @@ Pri každej väčšej úprave appky sa sem pridá nový riadok s číslom verzie
 (rovnaké číslo, aké appka zobrazuje pod nadpisom, aby sa dalo overiť,
 či je nasadená naozaj tá najnovšia).
 
+## 1.8.0
+- Dizajnový refresh: záložky presunuté na spodnú lištu (ako v bežných
+  telefónnych appkách), prilepená hlavička, farebné avatary hráčov
+  s iniciálami (zoznam členov, štatistiky, profil hráča), dnešný deň
+  zvýraznený v kalendároch, prepracovaná prihlasovacia obrazovka s logom
+  klubu, animovaný indikátor načítavania a jemné tiene/animácie na
+  kartách a tlačidlách. Bez zmeny funkčnosti.
+
 ## 1.7.0
 - Potvrdenie pred vymazaním hráča alebo udalosti (ochrana pred omylom).
 - Úprava existujúcej udalosti (dátum, čas, typ, poznámka) — admin už
