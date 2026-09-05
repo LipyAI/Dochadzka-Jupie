@@ -4,6 +4,13 @@ Pri každej väčšej úprave appky sa sem pridá nový riadok s číslom verzie
 (rovnaké číslo, aké appka zobrazuje pod nadpisom, aby sa dalo overiť,
 či je nasadená naozaj tá najnovšia).
 
+## 1.8.1
+- Oprava chyby v `service-worker.js`: odkazoval na ikony v neexistujúcom
+  priečinku `icons/`, čo spôsobovalo, že sa nová verzia appky nikdy
+  neinštalovala (aj po vyčistení cache v prehliadači zostávala appka
+  na starej verzii). Zároveň zmenená stratégia cache na "najprv sieť,
+  offline záloha z cache", aby sa toto v budúcnosti neopakovalo.
+
 ## 1.8.0
 - Dizajnový refresh: záložky presunuté na spodnú lištu (ako v bežných
   telefónnych appkách), prilepená hlavička, farebné avatary hráčov

@@ -7,7 +7,7 @@ import {
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.8.0";
+  var APP_VERSION = "1.8.1";
   var ADMIN_CODE = "293919";
   var LOGIN_KEY = "dochadzka-login-code";
   var THEME_KEY = "dochadzka-theme";
