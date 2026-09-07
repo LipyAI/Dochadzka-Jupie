@@ -11,7 +11,7 @@ import {
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.13.1";
+  var APP_VERSION = "1.13.2";
   var ADMIN_USERNAME = "lublip";
   // Tréneri a vedúci: smú upravovať existujúce udalosti (pridávať ich už
   // môže ktokoľvek prihlásený), ale nemajú plné admin práva (mazanie
@@ -453,7 +453,7 @@ import {
   function biometricLogin() {
     var credId;
     try { credId = localStorage.getItem(BIO_CRED_KEY); } catch (e) { credId = null; }
-    if (!credId) return Promise.reject(new Error("Face ID / odtlačok nie je na tomto telefóne nastavený."));
+    if (!credId) return Promise.reject(new Error("Nie je na tomto telefóne nastavený."));
     return navigator.credentials.get({
       publicKey: {
         challenge: crypto.getRandomValues(new Uint8Array(32)),
@@ -465,7 +465,16 @@ import {
       var raw = localStorage.getItem(BIO_CODE_KEY);
       var creds = raw ? JSON.parse(raw) : null;
       if (!creds || !creds.u || !creds.p) throw new Error("Uložené prihlásenie sa nenašlo.");
-      return signInWithEmailAndPassword(auth, usernameToEmail(creds.u), creds.p);
+      return signInWithEmailAndPassword(auth, usernameToEmail(creds.u), creds.p).catch(function () {
+        // The biometric prompt itself succeeded, so a sign-in failure here
+        // means the stored username/password is stale (e.g. a changed
+        // password, or - as happened once - credentials saved before the
+        // Firebase Auth migration). Clear it so the Face ID button doesn't
+        // keep reappearing and failing; the user just logs in normally and
+        // can re-enable Face ID from the offer that follows.
+        forgetBiometricLogin();
+        throw new Error("Uložené prihlásenie už nie je platné, bolo odstránené. Prihlás sa menom a heslom.");
+      });
     });
   }
   function forgetBiometricLogin() {
@@ -1399,7 +1408,7 @@ import {
           render();
         }).catch(function (err) {
           ui.bioBusy = false;
-          ui.authError = "Face ID / odtlačok zlyhal (" + err.message + "). Skús to znova alebo zadaj meno a heslo.";
+          ui.authError = "Face ID / odtlačok: " + err.message;
           render();
         });
         break;

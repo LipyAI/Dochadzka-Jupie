@@ -4,6 +4,15 @@ Pri každej väčšej úprave appky sa sem pridá nový riadok s číslom verzie
 (rovnaké číslo, aké appka zobrazuje pod nadpisom, aby sa dalo overiť,
 či je nasadená naozaj tá najnovšia).
 
+## 1.13.2
+- Oprava: ak mal niekto na telefóne uložené Face ID/odtlačok ešte z obdobia
+  pred migráciou na Firebase Authentication (v1.13.0), appka sa ho stále
+  snažila použiť so starým menom/heslom a hlásila nezrozumiteľnú chybu bez
+  možnosti nápravy priamo v appke. Teraz sa takéto neplatné uložené
+  prihlásenie po prvom neúspešnom pokuse automaticky vymaže a appka jasne
+  povie, že sa má používateľ prihlásiť menom a heslom (a môže si potom
+  Face ID znova nastaviť).
+
 ## 1.13.1
 - Oprava chyby z v1.13.0: Firebase Authentication si e-mailovú adresu vždy
   ukladá malými písmenami, appka si ale po prihlásení odvodzovala meno
