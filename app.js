@@ -11,13 +11,13 @@ import {
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.13.0";
-  var ADMIN_USERNAME = "LubLip";
+  var APP_VERSION = "1.13.1";
+  var ADMIN_USERNAME = "lublip";
   // Tréneri a vedúci: smú upravovať existujúce udalosti (pridávať ich už
   // môže ktokoľvek prihlásený), ale nemajú plné admin práva (mazanie
   // hráčov/udalostí, premenovanie hráčov, záložka Aktivita, záloha dát).
-  var TRAINER_USERNAMES = ["LukPsi", "MarTom"];
-  var MANAGER_USERNAMES = ["MatDrd"];
+  var TRAINER_USERNAMES = ["lukpsi", "martom"];
+  var MANAGER_USERNAMES = ["matdrd"];
   var THEME_KEY = "dochadzka-theme";
   var BIO_CRED_KEY = "dochadzka-bio-credential";
   var BIO_CODE_KEY = "dochadzka-bio-code";
@@ -58,17 +58,30 @@ import {
   function stripDiacritics(s) {
     return String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   }
+  // Lowercase is the canonical form everywhere (Firestore doc IDs, the
+  // ADMIN_USERNAME/TRAINER_USERNAMES/MANAGER_USERNAMES lists, the derived
+  // Firebase Auth email) because Firebase Authentication itself always
+  // lowercases the email address it stores - deriving the signed-in
+  // username back from auth.currentUser.email would otherwise silently
+  // stop matching a mixed-case constant. displayUsername() below restores
+  // the nicer look for the UI only, never for comparisons/lookups.
   function computeUsername(fullName) {
     var parts = stripDiacritics(fullName).trim().split(/\s+/).filter(Boolean);
     if (parts.length < 2) return "";
     function chunk(word) {
-      var letters = word.replace(/[^a-zA-Z]/g, "").slice(0, 3);
-      if (!letters) return "";
-      return letters.charAt(0).toUpperCase() + letters.slice(1).toLowerCase();
+      return word.replace(/[^a-zA-Z]/g, "").slice(0, 3).toLowerCase();
     }
     var first = chunk(parts[0]);
     var last = chunk(parts[parts.length - 1]);
     return first && last ? first + last : "";
+  }
+  function displayUsername(username) {
+    var s = String(username || "");
+    var out = "";
+    for (var i = 0; i < s.length; i += 3) {
+      out += s.charAt(i).toUpperCase() + s.slice(i + 1, i + 3);
+    }
+    return out;
   }
   function isValidPassword(pw) {
     return typeof pw === "string" && pw.length >= 8 && /[A-Z]/.test(pw) && /[a-z]/.test(pw) && /[0-9]/.test(pw);
@@ -394,10 +407,10 @@ import {
   // request.auth, and /accounts/{username} on request.auth's email matching
   // that username, without needing any backend of our own.
   var AUTH_EMAIL_DOMAIN = "@jupie-app.local";
-  function usernameToEmail(username) { return username + AUTH_EMAIL_DOMAIN; }
+  function usernameToEmail(username) { return String(username || "").toLowerCase() + AUTH_EMAIL_DOMAIN; }
   function mapAuthError(err, username) {
     if (err && err.code === "auth/email-already-in-use") {
-      return "Prihlasovacie meno " + username + " je už obsadené. Ak si to ty, prihlás sa; inak kontaktuj admina.";
+      return "Prihlasovacie meno " + displayUsername(username) + " je už obsadené. Ak si to ty, prihlás sa; inak kontaktuj admina.";
     }
     if (err && err.code === "auth/weak-password") return "Heslo nespĺňa požiadavky.";
     return "Registrácia zlyhala. Skús to znova.";
@@ -811,7 +824,7 @@ import {
       : isManager() ? ' <span class="admin-pill trainer-pill">Vedúci</span>'
       : isTrainer() ? ' <span class="admin-pill trainer-pill">Tréner</span>'
       : "";
-    html += '<span class="small">Prihl\u00e1sen\u00fd: ' + esc(ui.code) + rolePill + '</span>';
+    html += '<span class="small">Prihl\u00e1sen\u00fd: ' + esc(displayUsername(ui.code)) + rolePill + '</span>';
     html += '<a href="#" data-action="logout" class="small logout-link">Odhl\u00e1si\u0165</a>';
     html += "</div>";
 
@@ -867,7 +880,7 @@ import {
 
     if (ui.authMode === "register") {
       var pw = ui.regPasswordVal;
-      var uname = computeUsername(ui.regNameVal);
+      var uname = displayUsername(computeUsername(ui.regNameVal));
       html += '<div class="login-title">Vytvor si \u00fa\u010det</div>';
       html += '<div class="small login-hint">Prihlasovacie meno vznikne automaticky z tvojho mena a priezviska.</div>';
       html += '<input type="text" id="input-reg-name" class="auth-input" placeholder="Meno a priezvisko" autocapitalize="words" value="' + esc(ui.regNameVal) + '" />';
@@ -1100,8 +1113,8 @@ import {
     if (t.note) html += '<div class="small">' + esc(t.note) + "</div>";
     html += '<div class="small">' + presentWordCap(t) + ": " + presentCount + " / " + data.members.length + "</div>";
     if (isAdmin()) {
-      if (t.createdBy) html += '<div class="small">Vytvoril: ' + esc(t.createdBy) + "</div>";
-      if (t.lastEditedBy) html += '<div class="small">Naposledy upravil: ' + esc(t.lastEditedBy) + " (" + formatDateTime(t.lastEditedAt) + ")</div>";
+      if (t.createdBy) html += '<div class="small">Vytvoril: ' + esc(displayUsername(t.createdBy)) + "</div>";
+      if (t.lastEditedBy) html += '<div class="small">Naposledy upravil: ' + esc(displayUsername(t.lastEditedBy)) + " (" + formatDateTime(t.lastEditedAt) + ")</div>";
     }
     html += "</div>";
 
@@ -1187,7 +1200,7 @@ import {
       html += '<div class="activity-item">';
       html += '<span class="activity-dot"></span>';
       html += '<div style="flex:1">';
-      html += '<div class="row"><span><strong>' + esc(entry.code) + "</strong> " + esc(label) + "</span>";
+      html += '<div class="row"><span><strong>' + esc(displayUsername(entry.code)) + "</strong> " + esc(label) + "</span>";
       html += '<span class="small">' + formatDateTime(entry.ts) + "</span></div>";
       if (entry.detail) html += '<div class="small">' + esc(entry.detail) + "</div>";
       html += "</div></div>";
@@ -1318,7 +1331,7 @@ import {
       regNameEl.addEventListener("input", function (e) {
         ui.regNameVal = e.target.value;
         var preview = document.getElementById("username-preview");
-        if (preview) preview.textContent = computeUsername(ui.regNameVal) || "—";
+        if (preview) preview.textContent = displayUsername(computeUsername(ui.regNameVal)) || "—";
       });
       regNameEl.focus();
     }
