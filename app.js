@@ -3,18 +3,21 @@ import {
   getFirestore, doc, collection, onSnapshot, setDoc, deleteDoc, addDoc,
   query, orderBy, limit, getDoc, writeBatch,
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
+import {
+  getAuth, setPersistence, browserSessionPersistence, onAuthStateChanged,
+  createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut,
+} from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
 
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.12.1";
+  var APP_VERSION = "1.13.0";
   var ADMIN_USERNAME = "LubLip";
   // Tréneri a vedúci: smú upravovať existujúce udalosti (pridávať ich už
   // môže ktokoľvek prihlásený), ale nemajú plné admin práva (mazanie
   // hráčov/udalostí, premenovanie hráčov, záložka Aktivita, záloha dát).
   var TRAINER_USERNAMES = ["LukPsi", "MarTom"];
   var MANAGER_USERNAMES = ["MatDrd"];
-  var LOGIN_KEY = "dochadzka-login-code";
   var THEME_KEY = "dochadzka-theme";
   var BIO_CRED_KEY = "dochadzka-bio-credential";
   var BIO_CODE_KEY = "dochadzka-bio-code";
@@ -171,8 +174,10 @@ import {
 
   // ---------- shared (Firebase) state ----------
   var data = { members: [], trainings: [], attendance: {}, log: [] };
-  var db;
+  var db, auth;
   var membersCol, trainingsCol, attendanceCol, logCol, accountsCol, metaDocRef, legacyDocRef;
+  var unsubFns = [];
+  var currentUid = null;
 
   function initFirebase() {
     var cfg = window.FIREBASE_CONFIG;
@@ -183,6 +188,7 @@ import {
     }
     var app = initializeApp(cfg);
     db = getFirestore(app);
+    auth = getAuth(app);
     membersCol = collection(db, "members");
     trainingsCol = collection(db, "trainings");
     attendanceCol = collection(db, "attendance");
@@ -191,6 +197,37 @@ import {
     metaDocRef = doc(db, "meta", "migration");
     legacyDocRef = doc(db, "dochadzka", "shared");
 
+    // Session-only persistence matches the app's existing "closed the app ->
+    // log in again" behaviour instead of Firebase Auth's default of staying
+    // signed in indefinitely across browser restarts.
+    setPersistence(auth, browserSessionPersistence).catch(function () { /* defaults still work */ });
+
+    onAuthStateChanged(auth, function (user) {
+      ui.authResolved = true;
+      if (user) {
+        if (currentUid !== user.uid) {
+          currentUid = user.uid;
+          ui.code = user.email && user.email.indexOf(AUTH_EMAIL_DOMAIN) !== -1
+            ? user.email.slice(0, user.email.indexOf(AUTH_EMAIL_DOMAIN))
+            : user.email;
+          ui.authBusy = false;
+          loadData();
+        }
+      } else {
+        currentUid = null;
+        stopListeners();
+        data.members = []; data.trainings = []; data.attendance = {}; data.log = [];
+        ui.code = null;
+        ui.dataLoaded = false;
+        ui.authMode = "login";
+        ui.loginUsernameVal = ""; ui.loginPasswordVal = "";
+      }
+      render();
+    });
+  }
+
+  function loadData() {
+    ui.dataLoaded = false;
     setTimeout(function () {
       if (!ui.dataLoaded) {
         ui.error = "Pripojenie k databáze trvá nezvyčajne dlho. Skontroluj internetové pripojenie alebo skús appku otvoriť v inom prehliadači (napr. Chrome). Ak máš v Safari zapnutý blokovač obsahu / VPN / Private Relay, skús ho pre túto stránku vypnúť.";
@@ -276,18 +313,18 @@ import {
       render();
     }
 
-    onSnapshot(membersCol, function (snap) {
+    unsubFns.push(onSnapshot(membersCol, function (snap) {
       data.members = snap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); });
       loaded.members = true; checkAllLoaded(); ui.error = ""; render();
-    }, onErr);
+    }, onErr));
 
-    onSnapshot(trainingsCol, function (snap) {
+    unsubFns.push(onSnapshot(trainingsCol, function (snap) {
       data.trainings = snap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); })
         .sort(function (a, b) { return a.date < b.date ? -1 : 1; });
       loaded.trainings = true; checkAllLoaded(); ui.error = ""; render();
-    }, onErr);
+    }, onErr));
 
-    onSnapshot(attendanceCol, function (snap) {
+    unsubFns.push(onSnapshot(attendanceCol, function (snap) {
       var att = {};
       snap.docs.forEach(function (d) {
         var v = d.data();
@@ -296,12 +333,17 @@ import {
       });
       data.attendance = att;
       loaded.attendance = true; checkAllLoaded(); ui.error = ""; render();
-    }, onErr);
+    }, onErr));
 
-    onSnapshot(query(logCol, orderBy("ts", "desc"), limit(200)), function (snap) {
+    unsubFns.push(onSnapshot(query(logCol, orderBy("ts", "desc"), limit(200)), function (snap) {
       data.log = snap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); });
       loaded.log = true; checkAllLoaded(); ui.error = ""; render();
-    }, onErr);
+    }, onErr));
+  }
+
+  function stopListeners() {
+    unsubFns.forEach(function (fn) { try { fn(); } catch (e) { /* ignore */ } });
+    unsubFns = [];
   }
 
   function withSaving(promise) {
@@ -345,44 +387,31 @@ import {
     for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
     return bytes.buffer;
   }
-  // ---------- accounts (username + password, PBKDF2-hashed) ----------
-  // Firestore rules stay wide open ("if true", see README) for simplicity, so
-  // anyone with the app URL could in principle read the accounts collection -
-  // hashing (rather than storing plaintext) and a high PBKDF2 iteration count
-  // at least make an offline crack of a leaked hash slow, consistent with the
-  // app's existing "closed circle of people, not a hardened login" stance.
-  var PBKDF2_ITERATIONS = 150000;
-  function randomSaltB64() { return bufToB64(crypto.getRandomValues(new Uint8Array(16))); }
-  function hashPassword(password, saltB64) {
-    return crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"])
-      .then(function (keyMaterial) {
-        return crypto.subtle.deriveBits(
-          { name: "PBKDF2", salt: b64ToBuf(saltB64), iterations: PBKDF2_ITERATIONS, hash: "SHA-256" },
-          keyMaterial, 256
-        );
-      })
-      .then(function (bits) { return bufToB64(bits); });
-  }
-  function verifyAccount(username, password) {
-    return getDoc(doc(accountsCol, username)).then(function (snap) {
-      if (!snap.exists()) throw new Error("Účet s týmto menom neexistuje.");
-      var acc = snap.data();
-      return hashPassword(password, acc.salt).then(function (hash) {
-        if (hash !== acc.hash) throw new Error("Nesprávne heslo.");
-      });
-    });
+  // ---------- accounts (username + password via Firebase Authentication) ----------
+  // There is no real email involved - Firebase Auth is used purely as a
+  // password-verification service, addressed by a deterministic fake email
+  // derived from the username. Firestore rules then gate each collection on
+  // request.auth, and /accounts/{username} on request.auth's email matching
+  // that username, without needing any backend of our own.
+  var AUTH_EMAIL_DOMAIN = "@jupie-app.local";
+  function usernameToEmail(username) { return username + AUTH_EMAIL_DOMAIN; }
+  function mapAuthError(err, username) {
+    if (err && err.code === "auth/email-already-in-use") {
+      return "Prihlasovacie meno " + username + " je už obsadené. Ak si to ty, prihlás sa; inak kontaktuj admina.";
+    }
+    if (err && err.code === "auth/weak-password") return "Heslo nespĺňa požiadavky.";
+    return "Registrácia zlyhala. Skús to znova.";
   }
   function registerAccount(fullName, password) {
     var username = computeUsername(fullName);
     if (!username) return Promise.reject(new Error("Zadaj meno aj priezvisko."));
     if (!isValidPassword(password)) return Promise.reject(new Error("Heslo nespĺňa požiadavky."));
-    return getDoc(doc(accountsCol, username)).then(function (snap) {
-      if (snap.exists()) throw new Error("Prihlasovacie meno " + username + " je už obsadené. Ak si to ty, prihlás sa; inak kontaktuj admina.");
-      var salt = randomSaltB64();
-      return hashPassword(password, salt).then(function (hash) {
-        return setDoc(doc(accountsCol, username), { name: fullName.trim(), salt: salt, hash: hash, createdAt: Date.now() });
-      });
-    }).then(function () { return username; });
+    return createUserWithEmailAndPassword(auth, usernameToEmail(username), password)
+      .then(function () {
+        return setDoc(doc(accountsCol, username), { name: fullName.trim(), createdAt: Date.now() });
+      })
+      .then(function () { return username; })
+      .catch(function (err) { throw new Error(mapAuthError(err, username)); });
   }
 
   // ---------- biometric unlock (Face ID / odtlačok) ----------
@@ -423,7 +452,7 @@ import {
       var raw = localStorage.getItem(BIO_CODE_KEY);
       var creds = raw ? JSON.parse(raw) : null;
       if (!creds || !creds.u || !creds.p) throw new Error("Uložené prihlásenie sa nenašlo.");
-      return verifyAccount(creds.u, creds.p).then(function () { return creds.u; });
+      return signInWithEmailAndPassword(auth, usernameToEmail(creds.u), creds.p);
     });
   }
   function forgetBiometricLogin() {
@@ -432,7 +461,8 @@ import {
 
   // ---------- transient UI state ----------
   var ui = {
-    code: (function () { try { return sessionStorage.getItem(LOGIN_KEY) || null; } catch (e) { return null; } })(),
+    code: null,
+    authResolved: false,
     authMode: "login",
     loginUsernameVal: "",
     loginPasswordVal: "",
@@ -531,11 +561,12 @@ import {
   }
 
   // ---------- mutations ----------
-  function completeLogin(username, password) {
-    ui.code = username;
+  // ui.code, data loading etc. are set from the onAuthStateChanged handler in
+  // initFirebase() once Firebase confirms the sign-in - these functions only
+  // kick that off and surface errors.
+  function completeLogin(password) {
     ui.authError = "";
     ui.authBusy = false;
-    try { sessionStorage.setItem(LOGIN_KEY, username); } catch (e) { /* ignore */ }
     if (ui.bioAvailable && !hasBiometricLogin()) {
       ui.showBioOffer = true;
       ui.pendingBioPassword = password || null;
@@ -551,8 +582,8 @@ import {
       return;
     }
     ui.authBusy = true; ui.authError = ""; render();
-    verifyAccount(username, password).then(function () {
-      completeLogin(username, password);
+    signInWithEmailAndPassword(auth, usernameToEmail(username), password).then(function () {
+      completeLogin(password);
     }).catch(function () {
       ui.authBusy = false;
       ui.authError = "Nesprávne prihlasovacie meno alebo heslo.";
@@ -578,8 +609,8 @@ import {
       return;
     }
     ui.authBusy = true; ui.authError = ""; render();
-    registerAccount(fullName, password).then(function (username) {
-      completeLogin(username, password);
+    registerAccount(fullName, password).then(function () {
+      completeLogin(password);
     }).catch(function (err) {
       ui.authBusy = false;
       ui.authError = err.message;
@@ -587,12 +618,7 @@ import {
     });
   }
   function logout() {
-    ui.code = null;
-    ui.loginUsernameVal = "";
-    ui.loginPasswordVal = "";
-    ui.authMode = "login";
-    try { sessionStorage.removeItem(LOGIN_KEY); } catch (e) { /* ignore */ }
-    render();
+    signOut(auth);
   }
 
   function addMember() {
@@ -767,6 +793,11 @@ import {
     html += "</div></div>";
     html += '<div class="version-tag">verzia ' + APP_VERSION + "</div>";
     html += '<div id="error-indicator" class="error" style="display:' + (ui.error ? "block" : "none") + '">' + esc(ui.error) + "</div>";
+
+    if (!ui.authResolved) {
+      html += '<div class="loading-state"><div class="spinner"></div><div>Načítavam…</div></div>';
+      return html;
+    }
 
     if (!ui.code) return html + renderLogin();
 
@@ -1350,9 +1381,8 @@ import {
       case "bio-login":
         if (ui.bioBusy) break;
         ui.bioBusy = true; ui.authError = ""; render();
-        biometricLogin().then(function (username) {
-          ui.code = username; ui.bioBusy = false;
-          try { sessionStorage.setItem(LOGIN_KEY, username); } catch (err) { /* ignore */ }
+        biometricLogin().then(function () {
+          ui.bioBusy = false;
           render();
         }).catch(function (err) {
           ui.bioBusy = false;

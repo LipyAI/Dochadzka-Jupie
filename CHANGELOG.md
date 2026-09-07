@@ -4,6 +4,24 @@ Pri každej väčšej úprave appky sa sem pridá nový riadok s číslom verzie
 (rovnaké číslo, aké appka zobrazuje pod nadpisom, aby sa dalo overiť,
 či je nasadená naozaj tá najnovšia).
 
+## 1.13.0
+- Prihlasovanie prerobené z vlastného PBKDF2 hashovania na **Firebase
+  Authentication** (Email/Password, s vygenerovaným technickým emailom
+  `{meno}@jupie-app.local`, žiadny skutočný email sa nikam neposiela).
+- Firestore pravidlá sprísnené - čítanie aj zápis vyžaduje prihláseného
+  používateľa (`request.auth != null`); `activityLog` je čitateľný iba
+  pre admina; `accounts` je čitateľný/zapisovateľný iba pre vlastníka
+  daného účtu. Appka predtým bola úplne verejne čitateľná aj zapisovateľná
+  komukoľvek, kto poznal jej adresu — **vyžaduje ručnú úpravu Firestore
+  pravidiel a povolenie Email/Password prihlasovania, pozri README.**
+- Staré heslá (PBKDF2 hashe) sa neprenášajú automaticky - všetci existujúci
+  používatelia (admin aj tréneri/vedúci) sa musia zaregistrovať nanovo pod
+  rovnakým prihlasovacím menom.
+- Face ID / odtlačok naďalej funguje, teraz overuje heslo cez Firebase Auth
+  namiesto vlastného PBKDF2 overenia.
+- Appka teraz spúšťa načítavanie dát (tréningy, členovia, dochádzka) až po
+  prihlásení, nie hneď pri otvorení appky.
+
 ## 1.12.1
 - MatDrd má namiesto odznaku "Tréner" odznak "Vedúci" (rovnaké práva ako
   ostatní tréneri, len iné pomenovanie v appke).
