@@ -4,6 +4,17 @@ Pri každej väčšej úprave appky sa sem pridá nový riadok s číslom verzie
 (rovnaké číslo, aké appka zobrazuje pod nadpisom, aby sa dalo overiť,
 či je nasadená naozaj tá najnovšia).
 
+## 1.13.1
+- Oprava chyby z v1.13.0: Firebase Authentication si e-mailovú adresu vždy
+  ukladá malými písmenami, appka si ale po prihlásení odvodzovala meno
+  späť z e-mailu a porovnávala ho s presne veľkými/malými písmenami
+  (`ADMIN_USERNAME` a pod.) - po znovunačítaní appky tak niekto (napr.
+  admin LubLip) prestal byť rozpoznaný ako admin. Prihlasovacie meno je
+  teraz kanonicky vždy malými písmenami (rovnako, ako to aj tak robí
+  Firebase), appka ho ale naďalej pekne zobrazuje s veľkými začiatočnými
+  písmenami (napr. "LubLip"). Netýka sa to hesiel ani existujúcich
+  Firebase Auth účtov - netreba sa znova registrovať.
+
 ## 1.13.0
 - Prihlasovanie prerobené z vlastného PBKDF2 hashovania na **Firebase
   Authentication** (Email/Password, s vygenerovaným technickým emailom

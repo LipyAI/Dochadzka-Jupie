@@ -54,6 +54,11 @@ než pôvodný stav (kedy bolo úplne všetko verejne čitateľné aj zapisovate
   Ak sa meno zhoduje s už existujúcim účtom, Firebase Auth registráciu odmietne
   (appka to ukáže ako "meno je už obsadené") — treba to vyriešiť inak zadaným
   menom, alebo ručne vymazať starý účet vo Firebase Console → Authentication.
+  Appka ho takto pekne zobrazuje, ale interne (Firestore doc ID,
+  `ADMIN_USERNAME`/`TRAINER_USERNAMES`/`MANAGER_USERNAMES`, odvodený
+  e-mail) sa vždy pracuje s malými písmenami `lublip` — Firebase
+  Authentication si e-mail aj tak vždy ukladá malými písmenami, takže
+  toto je jediná spoľahlivá kanonická forma (viď v1.13.1 v CHANGELOG).
 - Heslo si každý volí sám, minimálne 8 znakov, aspoň jedno veľké písmeno,
   jedno malé písmeno a jednu číslicu.
 - Appka drží prihlásenie len na dobu otvorenia appky (Firebase Auth
