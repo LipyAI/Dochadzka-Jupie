@@ -4,6 +4,13 @@ Pri každej väčšej úprave appky sa sem pridá nový riadok s číslom verzie
 (rovnaké číslo, aké appka zobrazuje pod nadpisom, aby sa dalo overiť,
 či je nasadená naozaj tá najnovšia).
 
+## 1.13.3
+- Jasnejšia hláška pri neúspešnom prihlásení — dopĺňa pripomienku, že ak
+  ešte nemá používateľ účet, treba sa najprv zaregistrovať (tlačidlo pod
+  formulárom). Predtým hláška "Nesprávne prihlasovacie meno alebo heslo"
+  vyzerala rovnako aj vtedy, keď sa niekto len snažil rovno prihlásiť bez
+  toho, aby mal účet vôbec vytvorený.
+
 ## 1.13.2
 - Oprava: ak mal niekto na telefóne uložené Face ID/odtlačok ešte z obdobia
   pred migráciou na Firebase Authentication (v1.13.0), appka sa ho stále
