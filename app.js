@@ -11,7 +11,7 @@ import {
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.13.3";
+  var APP_VERSION = "1.13.4";
   var ADMIN_USERNAME = "lublip";
   // Tréneri a vedúci: smú upravovať existujúce udalosti (pridávať ich už
   // môže ktokoľvek prihlásený), ale nemajú plné admin práva (mazanie
@@ -317,7 +317,11 @@ import {
   }
 
   function startListeners() {
-    var loaded = { members: false, trainings: false, attendance: false, log: false };
+    // activityLog is admin-only under the Firestore rules, so only the admin
+    // account subscribes to it - anyone else would just get a permission
+    // error there forever, which used to block dataLoaded from ever
+    // becoming true (the app got stuck on "Pripájam sa k databáze...").
+    var loaded = { members: false, trainings: false, attendance: false, log: !isAdmin() };
     function checkAllLoaded() {
       if (loaded.members && loaded.trainings && loaded.attendance && loaded.log) ui.dataLoaded = true;
     }
@@ -348,10 +352,12 @@ import {
       loaded.attendance = true; checkAllLoaded(); ui.error = ""; render();
     }, onErr));
 
-    unsubFns.push(onSnapshot(query(logCol, orderBy("ts", "desc"), limit(200)), function (snap) {
-      data.log = snap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); });
-      loaded.log = true; checkAllLoaded(); ui.error = ""; render();
-    }, onErr));
+    if (isAdmin()) {
+      unsubFns.push(onSnapshot(query(logCol, orderBy("ts", "desc"), limit(200)), function (snap) {
+        data.log = snap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); });
+        loaded.log = true; checkAllLoaded(); ui.error = ""; render();
+      }, onErr));
+    }
   }
 
   function stopListeners() {

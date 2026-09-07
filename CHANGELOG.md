@@ -4,6 +4,16 @@ Pri každej väčšej úprave appky sa sem pridá nový riadok s číslom verzie
 (rovnaké číslo, aké appka zobrazuje pod nadpisom, aby sa dalo overiť,
 či je nasadená naozaj tá najnovšia).
 
+## 1.13.4
+- **Kritická oprava:** akýkoľvek neadmin účet (tréner, vedúci, aj bežný
+  nový hráč) sa po prihlásení/registrácii zasekol navždy na "Pripájam sa
+  k databáze…". Appka sa pri štarte pokúšala načítať aj záložku Aktivita
+  (activityLog) pre úplne každého, hoci ju smie čítať iba admin - odkedy
+  to nové Firestore pravidlá (v1.13.1) naozaj vynucujú, appka na túto
+  neúspešnú odpoveď čakala donekonečna namiesto toho, aby ju pre
+  neadminov jednoducho nenačítavala. Postihnutí boli všetci traja
+  tréneri/vedúci pri prvom prihlásení po zapnutí nových pravidiel.
+
 ## 1.13.3
 - Jasnejšia hláška pri neúspešnom prihlásení — dopĺňa pripomienku, že ak
   ešte nemá používateľ účet, treba sa najprv zaregistrovať (tlačidlo pod
