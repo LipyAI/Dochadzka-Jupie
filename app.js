@@ -11,7 +11,7 @@ import {
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.13.2";
+  var APP_VERSION = "1.13.3";
   var ADMIN_USERNAME = "lublip";
   // Tréneri a vedúci: smú upravovať existujúce udalosti (pridávať ich už
   // môže ktokoľvek prihlásený), ale nemajú plné admin práva (mazanie
@@ -608,7 +608,7 @@ import {
       completeLogin(password);
     }).catch(function () {
       ui.authBusy = false;
-      ui.authError = "Nesprávne prihlasovacie meno alebo heslo.";
+      ui.authError = "Nesprávne prihlasovacie meno alebo heslo. Ak nemáš ešte účet, vytvor si ho nižšie.";
       render();
     });
   }
