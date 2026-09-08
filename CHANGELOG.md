@@ -4,6 +4,13 @@ Pri každej väčšej úprave appky sa sem pridá nový riadok s číslom verzie
 (rovnaké číslo, aké appka zobrazuje pod nadpisom, aby sa dalo overiť,
 či je nasadená naozaj tá najnovšia).
 
+## 1.15.0
+- Tlačidlo "Vrátiť späť pred označením všetkých" — objaví sa hneď po
+  použití "Označiť všetkých" / "Zrušiť všetkých" v detaile udalosti a
+  vráti dochádzku presne do stavu, aký bol tesne pred tým (aj keď
+  niekto predtým nemal zaznačené vôbec nič). Zmizne po použití alebo
+  pri odchode z detailu udalosti.
+
 ## 1.14.0
 - Zapnutá offline persistencia Firestore (lokálna cache cez IndexedDB,
   viacsalonková) — appka pri opätovnom otvorení ukáže naposledy

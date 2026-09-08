@@ -12,7 +12,7 @@ import {
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.14.0";
+  var APP_VERSION = "1.15.0";
   var ADMIN_USERNAME = "lublip";
   // Tréneri a vedúci: smú upravovať existujúce udalosti (pridávať ich už
   // môže ktokoľvek prihlásený), ale nemajú plné admin práva (mazanie
@@ -511,6 +511,7 @@ import {
     bioBusy: false,
     showBioOffer: false,
     pendingBioPassword: null,
+    markAllUndo: null,
     tab: "trainings",
     selectedTrainingId: null,
     selectedMemberId: null,
@@ -796,6 +797,7 @@ import {
     logAction("attendance", t ? formatDateRange(t.date, t.endDate) : "", trainingId);
   }
   function markAll(trainingId, value) {
+    ui.markAllUndo = { trainingId: trainingId, snapshot: Object.assign({}, data.attendance[trainingId] || {}) };
     var obj = {};
     data.members.forEach(function (m) { obj[m.id] = value; });
     data.attendance[trainingId] = obj;
@@ -806,6 +808,26 @@ import {
       batch.set(doc(attendanceCol, trainingId + "_" + m.id), { trainingId: trainingId, memberId: m.id, present: value, date: t ? t.date : null });
     });
     batch.set(doc(trainingsCol, trainingId), { lastEditedBy: ui.code, lastEditedAt: Date.now() }, { merge: true });
+    withSaving(batch.commit());
+    logAction("attendance", t ? formatDateRange(t.date, t.endDate) : "", trainingId);
+  }
+  function undoMarkAll() {
+    if (!ui.markAllUndo) return;
+    var trainingId = ui.markAllUndo.trainingId;
+    var snapshot = ui.markAllUndo.snapshot;
+    var t = touchTraining(trainingId);
+    data.attendance[trainingId] = Object.assign({}, snapshot);
+    ui.markAllUndo = null;
+    render();
+    var batch = writeBatch(db);
+    data.members.forEach(function (m) {
+      if (Object.prototype.hasOwnProperty.call(snapshot, m.id)) {
+        batch.set(doc(attendanceCol, trainingId + "_" + m.id), { trainingId: trainingId, memberId: m.id, present: snapshot[m.id], date: t ? t.date : null });
+      } else {
+        batch.delete(doc(attendanceCol, trainingId + "_" + m.id));
+      }
+    });
+    if (t) batch.set(doc(trainingsCol, trainingId), { lastEditedBy: ui.code, lastEditedAt: Date.now() }, { merge: true });
     withSaving(batch.commit());
     logAction("attendance", t ? formatDateRange(t.date, t.endDate) : "", trainingId);
   }
@@ -1151,6 +1173,10 @@ import {
     html += '<button class="btn" data-action="mark-all" data-id="' + t.id + '" data-value="false">' + svgIcon("x") + ' Zrušiť všetkých</button>';
     html += "</div>";
 
+    if (ui.markAllUndo && ui.markAllUndo.trainingId === t.id) {
+      html += '<button class="btn" data-action="undo-mark-all" style="margin-bottom:10px">' + svgIcon("repeat") + ' Vrátiť späť pred označením všetkých</button>';
+    }
+
     sortedMembers().forEach(function (m) {
       var present = att[m.id] === true;
       var absent = att[m.id] === false;
@@ -1454,7 +1480,7 @@ import {
       case "quickday": ui.newTrainingDate = nextWeekday(parseInt(el.getAttribute("data-day"), 10)); render(); break;
       case "add-training": addTraining(); break;
       case "duplicate-training": ui.isEditingTraining = false; duplicateTraining(el.getAttribute("data-id")); break;
-      case "open-training": ui.selectedTrainingId = el.getAttribute("data-id"); ui.isEditingTraining = false; render(); break;
+      case "open-training": ui.selectedTrainingId = el.getAttribute("data-id"); ui.isEditingTraining = false; ui.markAllUndo = null; render(); break;
       case "edit-training": startEditTraining(el.getAttribute("data-id")); break;
       case "cancel-training-edit": cancelEditTraining(); break;
       case "save-training-edit": saveEditTraining(el.getAttribute("data-id")); break;
@@ -1467,9 +1493,10 @@ import {
         ui.tab = "trainings";
         render();
         break;
-      case "back-training": ui.selectedTrainingId = null; ui.isEditingTraining = false; render(); break;
+      case "back-training": ui.selectedTrainingId = null; ui.isEditingTraining = false; ui.markAllUndo = null; render(); break;
       case "remove-training": removeTraining(el.getAttribute("data-id")); break;
       case "mark-all": markAll(el.getAttribute("data-id"), el.getAttribute("data-value") === "true"); break;
+      case "undo-mark-all": undoMarkAll(); break;
       case "set-att": setMemberAttendance(el.getAttribute("data-training"), el.getAttribute("data-member"), el.getAttribute("data-value") === "true"); break;
       case "add-member": addMember(); break;
       case "open-member":
