@@ -4,6 +4,20 @@ Pri každej väčšej úprave appky sa sem pridá nový riadok s číslom verzie
 (rovnaké číslo, aké appka zobrazuje pod nadpisom, aby sa dalo overiť,
 či je nasadená naozaj tá najnovšia).
 
+## 1.14.0
+- Zapnutá offline persistencia Firestore (lokálna cache cez IndexedDB,
+  viacsalonková) — appka pri opätovnom otvorení ukáže naposledy
+  načítané dáta takmer okamžite a na pozadí ich potichu obnoví.
+  Vie teraz aj krátko fungovať offline (zápis dochádzky sa odošle
+  automaticky, keď sa pripojenie obnoví).
+- Appka už nečaká na súčasné načítanie všetkých štyroch kolekcií
+  naraz — zobrazí obsah hneď, ako sú načítaní členovia a udalosti;
+  dochádzka a aktivita sa dotiahnu na pozadí a UI sa potichu prekreslí.
+- Každý nový záznam dochádzky si teraz ukladá aj dátum tréningu (kópiu
+  z udalosti) — bez zmeny správania appky dnes, len pripravuje pôdu na
+  prípadné obmedzenie histórie dochádzky v budúcnosti bez nutnosti
+  spätnej migrácie starých záznamov.
+
 ## 1.13.4
 - **Kritická oprava:** akýkoľvek neadmin účet (tréner, vedúci, aj bežný
   nový hráč) sa po prihlásení/registrácii zasekol navždy na "Pripájam sa
