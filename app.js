@@ -1,6 +1,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
 import {
-  getFirestore, doc, collection, onSnapshot, setDoc, deleteDoc, addDoc,
+  initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
+  doc, collection, onSnapshot, setDoc, deleteDoc, addDoc,
   query, orderBy, limit, getDoc, writeBatch,
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
 import {
@@ -11,7 +12,7 @@ import {
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.13.4";
+  var APP_VERSION = "1.14.0";
   var ADMIN_USERNAME = "lublip";
   // Tréneri a vedúci: smú upravovať existujúce udalosti (pridávať ich už
   // môže ktokoľvek prihlásený), ale nemajú plné admin práva (mazanie
@@ -200,7 +201,12 @@ import {
       return;
     }
     var app = initializeApp(cfg);
-    db = getFirestore(app);
+    // Local IndexedDB cache: the app shows the last-synced state instantly on
+    // reopen and can queue writes made while briefly offline (e.g. weak
+    // signal at the training ground), syncing them once back online.
+    db = initializeFirestore(app, {
+      localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+    });
     auth = getAuth(app);
     membersCol = collection(db, "members");
     trainingsCol = collection(db, "trainings");
@@ -317,13 +323,15 @@ import {
   }
 
   function startListeners() {
-    // activityLog is admin-only under the Firestore rules, so only the admin
-    // account subscribes to it - anyone else would just get a permission
-    // error there forever, which used to block dataLoaded from ever
-    // becoming true (the app got stuck on "Pripájam sa k databáze...").
-    var loaded = { members: false, trainings: false, attendance: false, log: !isAdmin() };
+    // Only members+trainings gate the initial "loading" screen - those are
+    // what the Tréningy/Členovia tabs need to render at all. attendance and
+    // activityLog stream in just after and the UI re-renders as they arrive
+    // (present-counts briefly read 0 until attendance lands, self-corrects).
+    // activityLog is also admin-only under the Firestore rules, so only the
+    // admin account subscribes to it at all.
+    var loaded = { members: false, trainings: false };
     function checkAllLoaded() {
-      if (loaded.members && loaded.trainings && loaded.attendance && loaded.log) ui.dataLoaded = true;
+      if (loaded.members && loaded.trainings) ui.dataLoaded = true;
     }
     function onErr(err) {
       ui.error = "Chyba pripojenia k databáze: " + err.message;
@@ -349,13 +357,13 @@ import {
         att[v.trainingId][v.memberId] = v.present;
       });
       data.attendance = att;
-      loaded.attendance = true; checkAllLoaded(); ui.error = ""; render();
+      ui.error = ""; render();
     }, onErr));
 
     if (isAdmin()) {
       unsubFns.push(onSnapshot(query(logCol, orderBy("ts", "desc"), limit(200)), function (snap) {
         data.log = snap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); });
-        loaded.log = true; checkAllLoaded(); ui.error = ""; render();
+        ui.error = ""; render();
       }, onErr));
     }
   }
@@ -782,7 +790,7 @@ import {
     data.attendance[trainingId][memberId] = value;
     var t = touchTraining(trainingId);
     render();
-    var writes = [setDoc(doc(attendanceCol, trainingId + "_" + memberId), { trainingId: trainingId, memberId: memberId, present: value })];
+    var writes = [setDoc(doc(attendanceCol, trainingId + "_" + memberId), { trainingId: trainingId, memberId: memberId, present: value, date: t ? t.date : null })];
     if (t) writes.push(setDoc(doc(trainingsCol, trainingId), { lastEditedBy: ui.code, lastEditedAt: Date.now() }, { merge: true }));
     withSaving(Promise.all(writes));
     logAction("attendance", t ? formatDateRange(t.date, t.endDate) : "", trainingId);
@@ -795,7 +803,7 @@ import {
     render();
     var batch = writeBatch(db);
     data.members.forEach(function (m) {
-      batch.set(doc(attendanceCol, trainingId + "_" + m.id), { trainingId: trainingId, memberId: m.id, present: value });
+      batch.set(doc(attendanceCol, trainingId + "_" + m.id), { trainingId: trainingId, memberId: m.id, present: value, date: t ? t.date : null });
     });
     batch.set(doc(trainingsCol, trainingId), { lastEditedBy: ui.code, lastEditedAt: Date.now() }, { merge: true });
     withSaving(batch.commit());
