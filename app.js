@@ -12,7 +12,7 @@ import {
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.15.0";
+  var APP_VERSION = "1.16.0";
   var ADMIN_USERNAME = "lublip";
   // Tréneri a vedúci: smú upravovať existujúce udalosti (pridávať ich už
   // môže ktokoľvek prihlásený), ale nemajú plné admin práva (mazanie
@@ -157,6 +157,7 @@ import {
     pencil: '<path d="M4 20l.9-3.6L16 5.3a1.5 1.5 0 0 1 2.1 0l.6.6a1.5 1.5 0 0 1 0 2.1L7.6 19.1 4 20z"/>',
     "arrow-left": '<path d="M19 12H5M11 6l-6 6 6 6"/>',
     "arrow-right": '<path d="M5 12h14M13 6l6 6-6 6"/>',
+    "chevron-down": '<path d="M6 9l6 6 6-6"/>',
     repeat: '<path d="M17 2l4 4-4 4M21 6H8a4 4 0 0 0-4 4M7 22l-4-4 4-4M3 18h13a4 4 0 0 0 4-4"/>',
     check: '<path d="M20 6L9 17l-5-5"/>',
     x: '<path d="M18 6L6 18M6 6l12 12"/>',
@@ -530,6 +531,7 @@ import {
     newTrainingTime: "",
     newTrainingNote: "",
     newTrainingType: "trening",
+    showPastEvents: false,
     saving: false,
     error: "",
     dataLoaded: false,
@@ -551,17 +553,31 @@ import {
     return data.members.slice().sort(function (a, b) { return a.name.localeCompare(b.name, "sk"); });
   }
   function statsEligibleEvents() {
-    // Only real trainings count toward attendance %% — matches/tournaments are squad
-    // selections, not attendance tracking, so they're excluded here.
-    return data.trainings.filter(function (t) { return (t.type || "trening") === "trening"; });
+    // Only real trainings that have already happened count toward attendance
+    // %% — matches/tournaments are squad selections, not attendance tracking,
+    // and a training scheduled for the future obviously has no attendance
+    // yet, so it must not lower anyone's percentage.
+    var today = todayISO();
+    return data.trainings.filter(function (t) {
+      return (t.type || "trening") === "trening" && t.date <= today;
+    });
   }
   function memberStats(memberId) {
     var present = 0;
+    var total = 0;
     var events = statsEligibleEvents();
     events.forEach(function (t) {
-      if (data.attendance[t.id] && data.attendance[t.id][memberId] === true) present++;
+      var att = data.attendance[t.id];
+      // A past training where attendance was never actually recorded for
+      // this member doesn't count as "absent" - it's simply left out of
+      // both the numerator and the denominator, as if it didn't exist for
+      // stats purposes. Only trainings with a real recorded mark (true or
+      // false) affect the percentage.
+      if (att && Object.prototype.hasOwnProperty.call(att, memberId)) {
+        total++;
+        if (att[memberId] === true) present++;
+      }
     });
-    var total = events.length;
     var pct = total === 0 ? 0 : Math.round((present / total) * 100);
     return { present: present, total: total, pct: pct };
   }
@@ -595,6 +611,14 @@ import {
       var end = t.endDate || t.date;
       return iso >= t.date && iso <= end;
     });
+  }
+  // An event counts as "already happened" for display grouping (Predchádzajúce)
+  // once its last day (endDate for a multi-day turnaj, otherwise date) is
+  // before today - a tournament that's still ongoing today still shows as
+  // upcoming/current, not tucked away as past.
+  function isEventPast(t, today) {
+    var end = t.endDate || t.date;
+    return end < today;
   }
 
   // ---------- mutations ----------
@@ -1034,6 +1058,47 @@ import {
     return html;
   }
 
+  // Renders one card for a single event - shared by the past ("Predchádzajúce")
+  // list and the current/upcoming list below, so both look identical apart
+  // from the delete button, which never applies to past events.
+  function renderEventCard(t, opts) {
+    var att = data.attendance[t.id] || {};
+    var presentCount = data.members.filter(function (m) { return att[m.id] === true; }).length;
+    var def = eventType(t);
+    var allowDelete = opts && opts.allowDelete;
+    var html = '<div class="card event-card" style="border-left-color:' + def.color + '">';
+    html += '<div class="row">';
+    html += '<div style="cursor:pointer;flex:1" data-action="open-training" data-id="' + t.id + '">';
+    html += '<div class="row" style="justify-content:flex-start;gap:8px">';
+    html += '<span style="font-weight:600">' + esc(formatEventWhen(t)) + "</span>";
+    html += '<span class="badge" style="background:' + def.bg + ";color:" + def.text + '">' + esc(def.label) + "</span>";
+    html += "</div>";
+    if (t.note) html += '<div class="small">' + esc(t.note) + "</div>";
+    html += '<div class="small">' + presentCount + " / " + data.members.length + " " + presentWord(t) + "</div>";
+    html += "</div>";
+    if (allowDelete && isAdmin()) html += '<button class="icon-btn" data-action="remove-training" data-id="' + t.id + '">' + svgIcon("trash") + '</button>';
+    html += "</div></div>";
+    return html;
+  }
+
+  // Groups a chronologically-sorted list of events by month, reusing the
+  // same "Mesiac Rok" header style used for the main list.
+  function renderEventsGroupedByMonth(events, opts) {
+    var html = "";
+    var groups = []; var currentKey = null;
+    events.forEach(function (t) {
+      var d = new Date(t.date + "T00:00:00");
+      var key = d.getFullYear() + "-" + d.getMonth();
+      if (key !== currentKey) { groups.push({ key: key, label: MONTHS_SK[d.getMonth()] + " " + d.getFullYear(), items: [] }); currentKey = key; }
+      groups[groups.length - 1].items.push(t);
+    });
+    groups.forEach(function (g) {
+      html += '<div class="month-label">' + esc(g.label) + "</div>";
+      g.items.forEach(function (t) { html += renderEventCard(t, opts); });
+    });
+    return html;
+  }
+
   function renderTrainingsTab() {
     var html = renderOverviewCalendar();
 
@@ -1078,35 +1143,31 @@ import {
     }
 
     var today = todayISO();
-    var groups = []; var currentKey = null;
+    // Split into events already fully finished (past) and today/upcoming.
+    // data.trainings is kept sorted ascending by date, so both halves stay
+    // chronologically ordered without re-sorting.
+    var pastEvents = [];
+    var upcomingEvents = [];
     data.trainings.forEach(function (t) {
-      var d = new Date(t.date + "T00:00:00");
-      var key = d.getFullYear() + "-" + d.getMonth();
-      if (key !== currentKey) { groups.push({ key: key, label: MONTHS_SK[d.getMonth()] + " " + d.getFullYear(), items: [] }); currentKey = key; }
-      groups[groups.length - 1].items.push(t);
+      if (isEventPast(t, today)) pastEvents.push(t); else upcomingEvents.push(t);
     });
 
-    groups.forEach(function (g) {
-      html += '<div class="month-label">' + esc(g.label) + "</div>";
-      g.items.forEach(function (t) {
-        var att = data.attendance[t.id] || {};
-        var presentCount = data.members.filter(function (m) { return att[m.id] === true; }).length;
-        var def = eventType(t);
-        var isPast = t.date < today;
-        html += '<div class="card event-card' + (isPast ? " past" : "") + '" style="border-left-color:' + def.color + '">';
-        html += '<div class="row">';
-        html += '<div style="cursor:pointer;flex:1" data-action="open-training" data-id="' + t.id + '">';
-        html += '<div class="row" style="justify-content:flex-start;gap:8px">';
-        html += '<span style="font-weight:600">' + esc(formatEventWhen(t)) + "</span>";
-        html += '<span class="badge" style="background:' + def.bg + ";color:" + def.text + '">' + esc(def.label) + "</span>";
-        html += "</div>";
-        if (t.note) html += '<div class="small">' + esc(t.note) + "</div>";
-        html += '<div class="small">' + presentCount + " / " + data.members.length + " " + presentWord(t) + "</div>";
-        html += "</div>";
-        if (isAdmin()) html += '<button class="icon-btn" data-action="remove-training" data-id="' + t.id + '">' + svgIcon("trash") + '</button>';
-        html += "</div></div>";
-      });
-    });
+    if (pastEvents.length > 0) {
+      html += '<button class="btn past-events-toggle" data-action="toggle-past-events" style="width:100%;justify-content:space-between;margin-bottom:8px">' +
+        '<span>Predchádzajúce (' + pastEvents.length + ')</span>' +
+        '<span class="chevron' + (ui.showPastEvents ? " open" : "") + '">' + svgIcon("chevron-down") + '</span>' +
+        '</button>';
+      if (ui.showPastEvents) {
+        // Most recent past event first, easiest to scan back through history.
+        html += renderEventsGroupedByMonth(pastEvents.slice().reverse(), { allowDelete: true });
+      }
+    }
+
+    if (upcomingEvents.length === 0) {
+      html += emptyState("Žiadne nadchádzajúce udalosti. Pridaj novú vyššie.");
+    } else {
+      html += renderEventsGroupedByMonth(upcomingEvents, { allowDelete: true });
+    }
     return html;
   }
 
@@ -1217,7 +1278,7 @@ import {
 
   function renderStatsTab() {
     if (data.members.length === 0 || statsEligibleEvents().length === 0) {
-      return emptyState("Pridaj členov aj tréningy, aby sa mohli zobraziť štatistiky dochádzky. (Zápasy a turnaje sa do štatistiky nepočítajú.)");
+      return emptyState("Pridaj členov aj tréningy, aby sa mohli zobraziť štatistiky dochádzky. (Zápasy a turnaje, aj tréningy, ktoré sa ešte neuskutočnili, sa do štatistiky nepočítajú.)");
     }
     var rows = sortedMembers().map(function (m) { return { m: m, s: memberStats(m.id) }; });
     rows.sort(function (a, b) { return b.s.pct - a.s.pct; });
@@ -1479,6 +1540,7 @@ import {
       case "set-type": ui.newTrainingType = el.getAttribute("data-type"); render(); break;
       case "quickday": ui.newTrainingDate = nextWeekday(parseInt(el.getAttribute("data-day"), 10)); render(); break;
       case "add-training": addTraining(); break;
+      case "toggle-past-events": ui.showPastEvents = !ui.showPastEvents; render(); break;
       case "duplicate-training": ui.isEditingTraining = false; duplicateTraining(el.getAttribute("data-id")); break;
       case "open-training": ui.selectedTrainingId = el.getAttribute("data-id"); ui.isEditingTraining = false; ui.markAllUndo = null; render(); break;
       case "edit-training": startEditTraining(el.getAttribute("data-id")); break;
